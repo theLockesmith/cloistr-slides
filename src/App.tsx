@@ -60,6 +60,11 @@ function createLocalSigner(privateKey: Uint8Array): SignerInterface {
   }
 }
 
+function getDocumentId(): string {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('docId') || 'demo-slides'
+}
+
 const INITIAL_PRESENTATION: Presentation = {
   metadata: {
     id: crypto.randomUUID(),
@@ -93,6 +98,7 @@ function App() {
     signer: SignerInterface
     publicKey: string
   } | null>(null)
+  const [documentId] = useState(getDocumentId)
   const [presentation, setPresentation] = useState<Presentation>(INITIAL_PRESENTATION)
 
   useEffect(() => {
@@ -142,7 +148,7 @@ function App() {
 
         <main style={{ flex: 1, overflow: 'hidden' }}>
           <SlideEditor
-            documentId="demo-slides"
+            documentId={documentId}
             presentation={presentation}
             onPresentationChange={setPresentation}
           />
