@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react'
 import * as Y from 'yjs'
+import { NostrSyncProvider } from '@cloistr/collab-common'
+import { useNostrAuth } from '../App'
 import type { Presentation, Slide, AnySlideElement } from '../types/slide'
 
 interface SlideEditorProps {
+  documentId: string
   presentation: Presentation
   onPresentationChange: (presentation: Presentation) => void
 }
 
-// Yjs document for collaborative editing
-const ydoc = new Y.Doc()
-const yslides = ydoc.getMap<Y.Map<any>>('slides')
-const ymetadata = ydoc.getMap('metadata')
-
 export const SlideEditor: React.FC<SlideEditorProps> = ({
+  documentId,
   presentation,
   onPresentationChange,
 }) => {
+  const { signer, relayUrl } = useNostrAuth()
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
   const [selectedElementIds] = useState<string[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -23,7 +23,50 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   const [panX] = useState(0)
   const [panY] = useState(0)
 
+  // Yjs document for collaborative editing
+  const [ydoc] = useState(() => new Y.Doc())
+  const [yslides] = useState(() => ydoc.getMap<Y.Map<any>>('slides'))
+  const [ymetadata] = useState(() => ydoc.getMap('metadata'))
+  const [, setProvider] = useState<NostrSyncProvider | null>(null)
+  const [isConnected, setIsConnected] = useState(false)
+  const [peerCount, setPeerCount] = useState(0)
+
   const currentSlide = presentation.slides[currentSlideIndex]
+
+  // Initialize NostrSyncProvider
+  useEffect(() => {
+    const syncProvider = new NostrSyncProvider(ydoc, {
+      signer,
+      relayUrl,
+      docId: documentId,
+    })
+
+    syncProvider.onConnect = () => {
+      console.log('[SlideEditor] Connected to relay')
+      setIsConnected(true)
+    }
+
+    syncProvider.onDisconnect = () => {
+      console.log('[SlideEditor] Disconnected from relay')
+      setIsConnected(false)
+    }
+
+    syncProvider.onPeersChange = (count: number) => {
+      console.log(`[SlideEditor] Peer count: ${count}`)
+      setPeerCount(count)
+    }
+
+    syncProvider.onError = (error: Error) => {
+      console.error('[SlideEditor] Sync error:', error)
+    }
+
+    syncProvider.connect().catch(console.error)
+    setProvider(syncProvider)
+
+    return () => {
+      syncProvider.destroy()
+    }
+  }, [documentId, ydoc, signer, relayUrl])
 
   // Initialize Yjs with current presentation data
   useEffect(() => {
@@ -56,9 +99,9 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
 
     ydoc.on('update', updateHandler)
     return () => ydoc.off('update', updateHandler)
-  }, [presentation])
+  }, [presentation, ydoc, ymetadata, yslides])
 
-  // Canvas drawing logic (placeholder)
+  // Canvas drawing logic
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -89,7 +132,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
 
       switch (element.type) {
         case 'text':
-          const textEl = element as any // Type assertion for demo
+          const textEl = element as any
           ctx.fillStyle = textEl.color || '#000000'
           ctx.font = `${textEl.fontSize}px ${textEl.fontFamily}`
           ctx.fillText(textEl.content, 0, 0)
@@ -113,7 +156,6 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           break
 
         case 'image':
-          // Image drawing would go here
           ctx.fillStyle = '#cccccc'
           ctx.fillRect(0, 0, element.width, element.height)
           ctx.strokeStyle = '#999999'
@@ -152,8 +194,6 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
       textAlign: 'left',
       lineHeight: 1.2,
     } as any
-
-    if (!currentSlide) return
 
     const updatedSlide: Slide = {
       ...currentSlide,
@@ -209,138 +249,156 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
-      {/* Slide Thumbnails Panel */}
-      <div style={{
-        width: '200px',
-        backgroundColor: '#f0f0f0',
-        borderRight: '1px solid #ccc',
-        overflowY: 'auto',
-        padding: '1rem'
-      }}>
-        <h3>Slides</h3>
-        <button onClick={addNewSlide} style={{ width: '100%', marginBottom: '1rem' }}>
-          + Add Slide
-        </button>
-
-        {presentation.slides.map((slide, index) => (
-          <div
-            key={slide.id}
-            onClick={() => setCurrentSlideIndex(index)}
-            style={{
-              padding: '0.5rem',
-              marginBottom: '0.5rem',
-              backgroundColor: index === currentSlideIndex ? '#e0e0e0' : '#ffffff',
-              border: '1px solid #ccc',
-              cursor: 'pointer',
-              borderRadius: '4px',
-            }}
-          >
-            <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
-              {index + 1}. {slide.title}
-            </div>
-            <div style={{ fontSize: '0.7rem', color: '#666' }}>
-              {slide.elements.length} elements
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Main Canvas Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* Toolbar */}
+    <div style={{ display: 'flex', height: '100%', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', flex: 1 }}>
+        {/* Slide Thumbnails Panel */}
         <div style={{
-          padding: '0.5rem',
-          backgroundColor: '#f8f8f8',
-          borderBottom: '1px solid #ccc',
-          display: 'flex',
-          gap: '0.5rem',
-          alignItems: 'center'
+          width: '200px',
+          backgroundColor: '#f0f0f0',
+          borderRight: '1px solid #ccc',
+          overflowY: 'auto',
+          padding: '1rem'
         }}>
-          <button onClick={addTextElement}>Add Text</button>
-          <button onClick={() => console.log('Add Shape')}>Add Shape</button>
-          <button onClick={() => console.log('Add Image')}>Add Image</button>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <label>Zoom:</label>
-            <input
-              type="range"
-              min="0.1"
-              max="3"
-              step="0.1"
-              value={zoom}
-              onChange={(e) => setZoom(parseFloat(e.target.value))}
-            />
-            <span>{Math.round(zoom * 100)}%</span>
-          </div>
+          <h3>Slides</h3>
+          <button onClick={addNewSlide} style={{ width: '100%', marginBottom: '1rem' }}>
+            + Add Slide
+          </button>
+
+          {presentation.slides.map((slide, index) => (
+            <div
+              key={slide.id}
+              onClick={() => setCurrentSlideIndex(index)}
+              style={{
+                padding: '0.5rem',
+                marginBottom: '0.5rem',
+                backgroundColor: index === currentSlideIndex ? '#e0e0e0' : '#ffffff',
+                border: '1px solid #ccc',
+                cursor: 'pointer',
+                borderRadius: '4px',
+              }}
+            >
+              <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
+                {index + 1}. {slide.title}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#666' }}>
+                {slide.elements.length} elements
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Canvas Container */}
-        <div style={{
-          flex: 1,
-          position: 'relative',
-          overflow: 'hidden',
-          backgroundColor: '#e8e8e8'
-        }}>
-          <canvas
-            ref={canvasRef}
-            width={800}
-            height={600}
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              backgroundColor: 'white',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-            }}
-            onMouseDown={(e) => {
-              // Handle element selection and canvas interaction
-              console.log('Canvas clicked:', e.clientX, e.clientY)
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Properties Panel */}
-      <div style={{
-        width: '250px',
-        backgroundColor: '#f0f0f0',
-        borderLeft: '1px solid #ccc',
-        padding: '1rem'
-      }}>
-        <h3>Properties</h3>
-        {selectedElementIds.length > 0 ? (
-          <div>
-            <p>Selected: {selectedElementIds.length} element(s)</p>
-            {/* Element properties would go here */}
-          </div>
-        ) : (
-          <div>
-            <h4>Slide Properties</h4>
-            <label>
-              Background Color:
+        {/* Main Canvas Area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Toolbar */}
+          <div style={{
+            padding: '0.5rem',
+            backgroundColor: '#f8f8f8',
+            borderBottom: '1px solid #ccc',
+            display: 'flex',
+            gap: '0.5rem',
+            alignItems: 'center'
+          }}>
+            <button onClick={addTextElement}>Add Text</button>
+            <button onClick={() => console.log('Add Shape')}>Add Shape</button>
+            <button onClick={() => console.log('Add Image')}>Add Image</button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <label>Zoom:</label>
               <input
-                type="color"
-                value={currentSlide?.background.value || '#ffffff'}
-                onChange={(e) => {
-                  if (!currentSlide) return
-                  const updatedSlide: Slide = {
-                    ...currentSlide,
-                    background: { type: 'color' as const, value: e.target.value },
-                    updatedAt: Date.now(),
-                  }
-                  const updatedPresentation = {
-                    ...presentation,
-                    slides: presentation.slides.map((slide, index) =>
-                      index === currentSlideIndex ? updatedSlide : slide
-                    ),
-                  }
-                  onPresentationChange(updatedPresentation)
-                }}
+                type="range"
+                min="0.1"
+                max="3"
+                step="0.1"
+                value={zoom}
+                onChange={(e) => setZoom(parseFloat(e.target.value))}
               />
-            </label>
+              <span>{Math.round(zoom * 100)}%</span>
+            </div>
           </div>
-        )}
+
+          {/* Canvas Container */}
+          <div style={{
+            flex: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            backgroundColor: '#e8e8e8'
+          }}>
+            <canvas
+              ref={canvasRef}
+              width={800}
+              height={600}
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                backgroundColor: 'white',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              }}
+              onMouseDown={(e) => {
+                console.log('Canvas clicked:', e.clientX, e.clientY)
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Properties Panel */}
+        <div style={{
+          width: '250px',
+          backgroundColor: '#f0f0f0',
+          borderLeft: '1px solid #ccc',
+          padding: '1rem'
+        }}>
+          <h3>Properties</h3>
+          {selectedElementIds.length > 0 ? (
+            <div>
+              <p>Selected: {selectedElementIds.length} element(s)</p>
+            </div>
+          ) : (
+            <div>
+              <h4>Slide Properties</h4>
+              <label>
+                Background Color:
+                <input
+                  type="color"
+                  value={currentSlide?.background.value || '#ffffff'}
+                  onChange={(e) => {
+                    if (!currentSlide) return
+                    const updatedSlide: Slide = {
+                      ...currentSlide,
+                      background: { type: 'color' as const, value: e.target.value },
+                      updatedAt: Date.now(),
+                    }
+                    const updatedPresentation = {
+                      ...presentation,
+                      slides: presentation.slides.map((slide, index) =>
+                        index === currentSlideIndex ? updatedSlide : slide
+                      ),
+                    }
+                    onPresentationChange(updatedPresentation)
+                  }}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Status bar */}
+      <div style={{
+        padding: '0.5rem 1rem',
+        backgroundColor: '#f8fafc',
+        borderTop: '1px solid #e2e8f0',
+        fontSize: '0.875rem',
+        color: '#64748b',
+        display: 'flex',
+        justifyContent: 'space-between'
+      }}>
+        <span>Document: {documentId}</span>
+        <span>
+          {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+          {' · '}
+          {peerCount + 1} user{peerCount > 0 ? 's' : ''} online
+        </span>
       </div>
     </div>
   )
