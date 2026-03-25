@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import * as Y from 'yjs'
 import { NostrSyncProvider, useDocumentPersistence } from '@cloistr/collab-common'
-import { useNostrAuth } from '../App'
+import type { SignerInterface } from '@cloistr/collab-common/auth'
 import type { Presentation, Slide, AnySlideElement } from '../types/slide'
 
 // For development, use VITE_BLOSSOM_URL env var or fall back to public server
@@ -12,14 +12,20 @@ interface SlideEditorProps {
   documentId: string
   presentation: Presentation
   onPresentationChange: (presentation: Presentation) => void
+  signer: SignerInterface
+  publicKey: string
+  relayUrl: string
 }
 
 export const SlideEditor: React.FC<SlideEditorProps> = ({
   documentId,
   presentation,
   onPresentationChange,
+  signer,
+  publicKey: _publicKey,
+  relayUrl,
 }) => {
-  const { signer, relayUrl } = useNostrAuth()
+  // Note: _publicKey currently unused, will be used for cursor display
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
   const [selectedElementIds] = useState<string[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
