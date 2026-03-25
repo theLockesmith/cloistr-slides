@@ -5,6 +5,11 @@ ARG NPM_TOKEN
 RUN echo "//git.coldforge.xyz/api/v4/projects/44/packages/npm/:_authToken=${NPM_TOKEN}" >> .npmrc
 RUN npm ci
 COPY . .
+# Vite env vars (must be set before build)
+ARG VITE_RELAY_URL=wss://relay.cloistr.xyz
+ARG VITE_BLOSSOM_URL=https://files.cloistr.xyz
+ENV VITE_RELAY_URL=${VITE_RELAY_URL}
+ENV VITE_BLOSSOM_URL=${VITE_BLOSSOM_URL}
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:alpine
