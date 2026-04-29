@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@cloistr/collab-common": "^0.1.1",
-    "@cloistr/ui": "^0.2.0",
+    "@cloistr/ui": "^0.3.0",
     "cloistr-collab-common": "file:../cloistr-collab-common",
     "nostr-tools": "^2.1.4",
     "react": "^18.2.0",
