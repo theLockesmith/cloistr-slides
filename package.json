@@ -11,9 +11,8 @@
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "@cloistr/collab-common": "^0.1.1",
-    "@cloistr/ui": "^0.3.0",
-    "cloistr-collab-common": "file:../cloistr-collab-common",
+    "@cloistr/collab-common": "file:../cloistr-collab-common",
+    "@cloistr/ui": "file:../cloistr-ui",
     "nostr-tools": "^2.1.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
