@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { SlideEditor } from './components/SlideEditor'
-import { useNostrAuth } from '@cloistr/collab-common/auth'
+import { useNostrAuth } from '@cloistr/auth'
 import { getOrCreateDocumentId, getServiceConfig } from '@cloistr/collab-common/config'
 import { Header, Footer, SharedAuthProvider, ToastProvider, LoginPrompt } from '@cloistr/ui/components'
 import '@cloistr/ui/styles'

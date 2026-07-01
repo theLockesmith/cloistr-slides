@@ -1,7 +1,7 @@
 {
   "name": "cloistr-slides",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "Collaborative presentation editor - Google Slides alternative for Cloistr",
   "scripts": {
@@ -11,6 +11,7 @@
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@cloistr/auth": "^0.1.0",
     "@cloistr/collab-common": "^0.2.1",
     "@cloistr/ui": "^0.5.3",
     "nostr-tools": "^2.1.4",
