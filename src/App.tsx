@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { SlideEditor } from './components/SlideEditor'
 import { useNostrAuth } from '@cloistr/auth'
 import { getOrCreateDocumentId, getServiceConfig } from '@cloistr/collab-common/config'
-import { Header, Footer, SharedAuthProvider, ToastProvider, LoginPrompt } from '@cloistr/ui/components'
+import { Header, Footer, SharedAuthProvider, ToastProvider, LoginPrompt, ThemeProvider } from '@cloistr/ui/components'
 import '@cloistr/ui/styles'
 import type { Presentation } from './types/slide'
 
@@ -74,11 +74,13 @@ function AppContent() {
 
 function App() {
   return (
-    <ToastProvider>
-      <SharedAuthProvider>
-      <AppContent />
-    </SharedAuthProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <SharedAuthProvider>
+          <AppContent />
+        </SharedAuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   )
 }
 
