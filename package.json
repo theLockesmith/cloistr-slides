@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@cloistr/auth": "^0.1.0",
-    "@cloistr/collab-common": "^0.2.3",
-    "@cloistr/ui": "^0.10.1",
+    "@cloistr/collab-common": "^0.2.4",
+    "@cloistr/ui": "^0.10.2",
     "nostr-tools": "^2.1.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
