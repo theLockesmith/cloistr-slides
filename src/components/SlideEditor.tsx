@@ -287,8 +287,8 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
         {/* Slide Thumbnails Panel */}
         <div style={{
           width: '200px',
-          backgroundColor: '#f0f0f0',
-          borderRight: '1px solid #ccc',
+          backgroundColor: 'var(--cloistr-bg-elevated)',
+          borderRight: '1px solid var(--cloistr-border)',
           overflowY: 'auto',
           padding: '1rem'
         }}>
@@ -304,8 +304,8 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
               style={{
                 padding: '0.5rem',
                 marginBottom: '0.5rem',
-                backgroundColor: index === currentSlideIndex ? '#e0e0e0' : '#ffffff',
-                border: '1px solid #ccc',
+                backgroundColor: index === currentSlideIndex ? 'var(--cloistr-bg-hover)' : 'var(--cloistr-bg-elevated)',
+                border: '1px solid var(--cloistr-border)',
                 cursor: 'pointer',
                 borderRadius: '4px',
               }}
@@ -313,7 +313,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
               <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
                 {index + 1}. {slide.title}
               </div>
-              <div style={{ fontSize: '0.7rem', color: '#666' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--cloistr-text-muted)' }}>
                 {slide.elements.length} elements
               </div>
             </div>
@@ -325,8 +325,8 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           {/* Toolbar */}
           <div style={{
             padding: '0.5rem',
-            backgroundColor: '#f8f8f8',
-            borderBottom: '1px solid #ccc',
+            backgroundColor: 'var(--cloistr-bg-elevated)',
+            borderBottom: '1px solid var(--cloistr-border)',
             display: 'flex',
             gap: '0.5rem',
             alignItems: 'center'
@@ -353,7 +353,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
             flex: 1,
             position: 'relative',
             overflow: 'hidden',
-            backgroundColor: '#e8e8e8'
+            backgroundColor: 'var(--cloistr-bg-hover)'
           }}>
             <canvas
               ref={canvasRef}
@@ -377,8 +377,8 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
         {/* Properties Panel */}
         <div style={{
           width: '250px',
-          backgroundColor: '#f0f0f0',
-          borderLeft: '1px solid #ccc',
+          backgroundColor: 'var(--cloistr-bg-elevated)',
+          borderLeft: '1px solid var(--cloistr-border)',
           padding: '1rem'
         }}>
           <h3>Properties</h3>
@@ -419,10 +419,10 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
       {/* Status bar */}
       <div style={{
         padding: '0.5rem 1rem',
-        backgroundColor: '#f8fafc',
-        borderTop: '1px solid #e2e8f0',
+        backgroundColor: 'var(--cloistr-bg-elevated)',
+        borderTop: '1px solid var(--cloistr-border)',
         fontSize: '0.875rem',
-        color: '#64748b',
+        color: 'var(--cloistr-text-muted)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
@@ -444,9 +444,9 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           style={{
             padding: '0.25rem 0.5rem',
             fontSize: '0.75rem',
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--cloistr-border)',
             borderRadius: '0.25rem',
-            backgroundColor: persistenceState.dirty ? '#3b82f6' : '#10b981',
+            backgroundColor: persistenceState.dirty ? 'var(--cloistr-info)' : 'var(--cloistr-success)',
             color: 'white',
             cursor: persistenceState.dirty ? 'pointer' : 'default',
             opacity: (!persistenceState.initialized || persistenceState.saving || !persistenceState.dirty) ? 0.5 : 1,
