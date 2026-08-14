@@ -1,3 +1,11 @@
+/**
+ * Logical slide dimensions (16:9). Every coordinate in a presentation is in
+ * this space; the canvas backing store matches it exactly and CSS handles the
+ * scaling, so zoom never has to be baked into stored geometry.
+ */
+export const SLIDE_WIDTH = 1600;
+export const SLIDE_HEIGHT = 900;
+
 export interface SlideElement {
   id: string;
   type: 'text' | 'shape' | 'image';
