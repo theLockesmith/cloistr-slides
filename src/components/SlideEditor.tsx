@@ -1,76 +1,114 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { NostrSyncProvider, useDocumentPersistence } from '@cloistr/collab-common'
+import { BlobStore } from '@cloistr/collab-common/storage'
+import { useToast } from '@cloistr/ui/components'
 import type { SignerInterface } from '@cloistr/auth'
-import type { Presentation, Slide, AnySlideElement } from '../types/slide'
+import type { AnySlideElement, Presentation, ShapeElement, Slide, TextElement } from '../types/slide'
+import { SLIDE_HEIGHT, SLIDE_WIDTH } from '../types/slide'
+import { drawSlide, handleAt, hitTest, resizeRect, type HandleId } from '../lib/render'
+import { createImageElement, createShapeElement, createTextElement, measureImage } from '../lib/elements'
+import * as doc from '../lib/ydoc'
+import { PropertiesPanel } from './PropertiesPanel'
+import { PresentMode } from './PresentMode'
 
 // For development, use VITE_BLOSSOM_URL env var or fall back to public server
 // Production uses files.cloistr.xyz with platform auth
 const BLOSSOM_URL = import.meta.env.VITE_BLOSSOM_URL || 'https://nostr.download'
 
+const SHAPES: Array<{ shape: ShapeElement['shape']; label: string }> = [
+  { shape: 'rectangle', label: 'Rectangle' },
+  { shape: 'circle', label: 'Ellipse' },
+  { shape: 'triangle', label: 'Triangle' },
+  { shape: 'line', label: 'Line' },
+]
+
 interface SlideEditorProps {
   documentId: string
-  presentation: Presentation
-  onPresentationChange: (presentation: Presentation) => void
+  onPresentationChange?: (presentation: Presentation) => void
   signer: SignerInterface
   publicKey: string
   relayUrl: string
 }
 
+interface DragState {
+  mode: 'move' | 'resize'
+  handle: HandleId | null
+  elementId: string
+  startX: number
+  startY: number
+  origin: { x: number; y: number; width: number; height: number }
+}
+
 export const SlideEditor: React.FC<SlideEditorProps> = ({
   documentId,
-  presentation,
   onPresentationChange,
   signer,
-  publicKey: _publicKey,
+  publicKey,
   relayUrl,
 }) => {
-  // Note: _publicKey currently unused, will be used for cursor display
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
-  const [selectedElementIds] = useState<string[]>([])
+  const toast = useToast()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [zoom, setZoom] = useState(1)
-  const [panX] = useState(0)
-  const [panY] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragRef = useRef<DragState | null>(null)
+  const seededRef = useRef(false)
 
-  // Yjs document for collaborative editing
   const [ydoc] = useState(() => new Y.Doc())
-  const [yslides] = useState(() => ydoc.getMap<Y.Map<any>>('slides'))
-  const [ymetadata] = useState(() => ydoc.getMap('metadata'))
   const [, setProvider] = useState<NostrSyncProvider | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [peerCount, setPeerCount] = useState(0)
 
-  const currentSlide = presentation.slides[currentSlideIndex]
+  const [presentation, setPresentation] = useState<Presentation>(() => doc.readSnapshot(ydoc))
+  const [currentSlideId, setCurrentSlideId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [scale, setScale] = useState(1)
+  const [shapeMenuOpen, setShapeMenuOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [presenting, setPresenting] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
-  // Initialize NostrSyncProvider
+  // Loaded images, plus a tick so a decode that finishes after the draw still
+  // repaints — without it an image stayed a grey placeholder until some other
+  // edit happened to trigger a render.
+  const imagesRef = useRef(new Map<string, HTMLImageElement>())
+  const [imageTick, setImageTick] = useState(0)
+
+  const slides = presentation.slides
+  const currentIndex = Math.max(0, slides.findIndex((slide) => slide.id === currentSlideId))
+  const currentSlide: Slide | undefined = slides[currentIndex]
+  const selectedElement: AnySlideElement | null =
+    currentSlide?.elements.find((element) => element.id === selectedId) ?? null
+
+  /** Mirror every Yjs change — local, remote, or a loaded snapshot — into React. */
   useEffect(() => {
-    const syncProvider = new NostrSyncProvider(ydoc, {
-      signer,
-      relayUrl,
-      docId: documentId,
-    })
-
-    syncProvider.onConnect = () => {
-      console.log('[SlideEditor] Connected to relay')
-      setIsConnected(true)
+    const sync = () => setPresentation(doc.readSnapshot(ydoc))
+    ydoc.on('update', sync)
+    sync()
+    return () => {
+      ydoc.off('update', sync)
     }
+  }, [ydoc])
 
-    syncProvider.onDisconnect = () => {
-      console.log('[SlideEditor] Disconnected from relay')
-      setIsConnected(false)
-    }
+  useEffect(() => {
+    onPresentationChange?.(presentation)
+  }, [presentation, onPresentationChange])
 
-    syncProvider.onPeersChange = (count: number) => {
-      console.log(`[SlideEditor] Peer count: ${count}`)
-      setPeerCount(count)
-    }
+  useEffect(() => {
+    doc.initMetadata(ydoc, { author: publicKey })
+  }, [ydoc, publicKey])
 
-    syncProvider.onError = (error: Error) => {
-      console.error('[SlideEditor] Sync error:', error)
-    }
+  // Relay sync
+  useEffect(() => {
+    const syncProvider = new NostrSyncProvider(ydoc, { signer, relayUrl, docId: documentId })
 
-    syncProvider.connect().catch(console.error)
+    syncProvider.onConnect = () => setIsConnected(true)
+    syncProvider.onDisconnect = () => setIsConnected(false)
+    syncProvider.onPeersChange = (count: number) => setPeerCount(count)
+    syncProvider.onError = (error: Error) => console.error('[SlideEditor] Sync error:', error)
+
+    syncProvider.connect().catch((error) => console.error('[SlideEditor] Connect failed:', error))
     setProvider(syncProvider)
 
     return () => {
@@ -78,381 +116,457 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     }
   }, [documentId, ydoc, signer, relayUrl])
 
-  // Document persistence via Blossom
   const [persistenceState, persistenceControls] = useDocumentPersistence(
     ydoc,
-    {
-      documentId,
-      blossomUrl: BLOSSOM_URL,
-      relayUrl,
-      signer,
-    },
-    {
-      autoLoad: true,
-      autoSaveInterval: 60000,
-    }
+    { documentId, blossomUrl: BLOSSOM_URL, relayUrl, signer, documentType: 'slides' },
+    { autoLoad: true, autoSaveInterval: 60000 }
   )
 
-  const handleSave = useCallback(async () => {
-    try {
-      await persistenceControls.save()
-    } catch (error) {
-      console.error('[SlideEditor] Save failed:', error)
-    }
-  }, [persistenceControls])
-
-  // Initialize Yjs with current presentation data
+  // Seed a first slide only once loading has settled. Seeding on mount would
+  // race the snapshot load and merge a stray blank slide into a real deck.
   useEffect(() => {
-    // Initialize metadata
-    if (!ymetadata.get('title')) {
-      ymetadata.set('title', presentation.metadata.title)
-      ymetadata.set('description', presentation.metadata.description)
-      ymetadata.set('author', presentation.metadata.author)
+    if (seededRef.current || persistenceState.loading) return
+    seededRef.current = true
+    if (doc.slideIds(ydoc).length === 0) doc.createSlide(ydoc)
+  }, [persistenceState.loading, ydoc])
+
+  useEffect(() => {
+    if (slides.length === 0) {
+      if (currentSlideId !== null) setCurrentSlideId(null)
+      return
     }
+    if (!slides.some((slide) => slide.id === currentSlideId)) setCurrentSlideId(slides[0]!.id)
+  }, [slides, currentSlideId])
 
-    // Initialize slides
-    presentation.slides.forEach((slide) => {
-      if (!yslides.has(slide.id)) {
-        const yslide = new Y.Map()
-        yslide.set('id', slide.id)
-        yslide.set('title', slide.title)
-        yslide.set('elements', new Y.Array())
-        yslide.set('background', slide.background)
-        yslide.set('notes', slide.notes || '')
-        yslides.set(slide.id, yslide)
-      }
-    })
-
-    // Listen for changes
-    const updateHandler = () => {
-      // Sync changes back to local state
-      // This is a placeholder - in real implementation would need proper sync
-      console.log('Yjs document updated')
+  useEffect(() => {
+    if (persistenceState.error) {
+      toast.error(`Could not save: ${persistenceState.error.message}`, { duration: 8000 })
     }
+  }, [persistenceState.error, toast])
 
-    ydoc.on('update', updateHandler)
-    return () => ydoc.off('update', updateHandler)
-  }, [presentation, ydoc, ymetadata, yslides])
-
-  // Canvas drawing logic
+  // Track the canvas's on-screen size so selection handles and the text overlay
+  // stay a constant size regardless of zoom or viewport.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    if (!currentSlide) return
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-    // Apply transform
-    ctx.setTransform(zoom, 0, 0, zoom, panX, panY)
-
-    // Draw background
-    if (currentSlide.background.type === 'color') {
-      ctx.fillStyle = currentSlide.background.value
-      ctx.fillRect(0, 0, canvas.width / zoom, canvas.height / zoom)
-    }
-
-    // Draw elements
-    currentSlide.elements.forEach((element) => {
-      ctx.save()
-      ctx.translate(element.x, element.y)
-      if (element.rotation) {
-        ctx.rotate((element.rotation * Math.PI) / 180)
-      }
-
-      switch (element.type) {
-        case 'text':
-          const textEl = element as any
-          ctx.fillStyle = textEl.color || '#000000'
-          ctx.font = `${textEl.fontSize}px ${textEl.fontFamily}`
-          ctx.fillText(textEl.content, 0, 0)
-          break
-
-        case 'shape':
-          const shapeEl = element as any
-          ctx.fillStyle = shapeEl.fillColor
-          ctx.strokeStyle = shapeEl.strokeColor
-          ctx.lineWidth = shapeEl.strokeWidth
-
-          if (shapeEl.shape === 'rectangle') {
-            ctx.fillRect(0, 0, element.width, element.height)
-            ctx.strokeRect(0, 0, element.width, element.height)
-          } else if (shapeEl.shape === 'circle') {
-            ctx.beginPath()
-            ctx.arc(element.width / 2, element.height / 2, element.width / 2, 0, 2 * Math.PI)
-            ctx.fill()
-            ctx.stroke()
-          }
-          break
-
-        case 'image':
-          ctx.fillStyle = '#cccccc'
-          ctx.fillRect(0, 0, element.width, element.height)
-          ctx.strokeStyle = '#999999'
-          ctx.strokeRect(0, 0, element.width, element.height)
-          break
-      }
-
-      // Draw selection indicators
-      if (selectedElementIds.includes(element.id)) {
-        ctx.strokeStyle = '#0066cc'
-        ctx.lineWidth = 2
-        ctx.strokeRect(-2, -2, element.width + 4, element.height + 4)
-      }
-
-      ctx.restore()
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0
+      if (width > 0) setScale(SLIDE_WIDTH / width)
     })
-  }, [currentSlide, zoom, panX, panY, selectedElementIds])
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
 
-  const addTextElement = () => {
-    if (!currentSlide) return
-
-    const newElement: AnySlideElement = {
-      id: crypto.randomUUID(),
-      type: 'text',
-      x: 100,
-      y: 100,
-      width: 200,
-      height: 50,
-      zIndex: currentSlide.elements.length,
-      content: 'New Text',
-      fontSize: 24,
-      fontFamily: 'Arial',
-      fontWeight: 'normal',
-      fontStyle: 'normal',
-      color: '#000000',
-      textAlign: 'left',
-      lineHeight: 1.2,
-    } as any
-
-    const updatedSlide: Slide = {
-      ...currentSlide,
-      elements: [...currentSlide.elements, newElement],
-      updatedAt: Date.now(),
+  // Fetch any image src we have not loaded yet.
+  useEffect(() => {
+    const sources = new Set<string>()
+    for (const slide of slides) {
+      for (const element of slide.elements) {
+        if (element.type === 'image' && element.src) sources.add(element.src)
+      }
+      if (slide.background?.type === 'image' && slide.background.value) {
+        sources.add(slide.background.value)
+      }
     }
 
-    const updatedPresentation = {
-      ...presentation,
-      slides: presentation.slides.map((slide, index) =>
-        index === currentSlideIndex ? updatedSlide : slide
-      ),
+    for (const src of sources) {
+      if (imagesRef.current.has(src)) continue
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => setImageTick((tick) => tick + 1)
+      img.onerror = () => setImageTick((tick) => tick + 1)
+      img.src = src
+      imagesRef.current.set(src, img)
     }
+  }, [slides])
 
-    onPresentationChange(updatedPresentation)
+  // Draw
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx) return
+    drawSlide(ctx, currentSlide, {
+      images: imagesRef.current,
+      selectedId: editingId ? null : selectedId,
+      scale,
+    })
+  }, [currentSlide, selectedId, editingId, scale, imageTick])
 
-    // Update Yjs document
-    const yslide = yslides.get(updatedSlide.id)
-    if (yslide) {
-      const yelements = yslide.get('elements') as Y.Array<any>
-      yelements.push([newElement])
+  const toLogical = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return {
+      x: (event.clientX - rect.left) * (SLIDE_WIDTH / rect.width),
+      y: (event.clientY - rect.top) * (SLIDE_HEIGHT / rect.height),
     }
   }
 
-  const addNewSlide = () => {
-    const newSlide: Slide = {
-      id: crypto.randomUUID(),
-      title: `Slide ${presentation.slides.length + 1}`,
-      elements: [],
-      background: {
-        type: 'color',
-        value: '#ffffff',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!currentSlide) return
+    const { x, y } = toLogical(event)
+
+    const handle = handleAt(selectedElement, x, y, scale)
+    const target = handle ? selectedElement : hitTest(currentSlide, x, y)
+
+    setEditingId(null)
+    setSelectedId(target?.id ?? null)
+
+    if (!target) return
+
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      mode: handle ? 'resize' : 'move',
+      handle,
+      elementId: target.id,
+      startX: x,
+      startY: y,
+      origin: { x: target.x, y: target.y, width: target.width, height: target.height },
+    }
+  }
+
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current
+    if (!drag || !currentSlide) return
+
+    const { x, y } = toLogical(event)
+    const dx = x - drag.startX
+    const dy = y - drag.startY
+
+    if (drag.mode === 'move') {
+      doc.updateElement(ydoc, currentSlide.id, drag.elementId, {
+        x: Math.round(drag.origin.x + dx),
+        y: Math.round(drag.origin.y + dy),
+      })
+      return
     }
 
-    const updatedPresentation = {
-      ...presentation,
-      slides: [...presentation.slides, newSlide],
+    const element = currentSlide.elements.find((el) => el.id === drag.elementId)
+    if (!element || !drag.handle) return
+
+    const next = resizeRect({ ...element, ...drag.origin }, drag.handle, dx, dy)
+    doc.updateElement(ydoc, currentSlide.id, drag.elementId, {
+      x: Math.round(next.x),
+      y: Math.round(next.y),
+      width: Math.round(next.width),
+      height: Math.round(next.height),
+    })
+  }
+
+  const endDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!currentSlide) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = (event.clientX - rect.left) * (SLIDE_WIDTH / rect.width)
+    const y = (event.clientY - rect.top) * (SLIDE_HEIGHT / rect.height)
+
+    const target = hitTest(currentSlide, x, y)
+    if (target?.type === 'text') {
+      setSelectedId(target.id)
+      setEditingId(target.id)
+    }
+  }
+
+  // Delete the selection, but never while a text box or form field has focus —
+  // Backspace has to keep deleting characters there.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (!selectedId || !currentSlide || editingId) return
+
+      const active = document.activeElement
+      if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
+
+      event.preventDefault()
+      doc.deleteElement(ydoc, currentSlide.id, selectedId)
+      setSelectedId(null)
     }
 
-    onPresentationChange(updatedPresentation)
-    setCurrentSlideIndex(presentation.slides.length)
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedId, currentSlide, editingId, ydoc])
 
-    // Add to Yjs
-    const yslide = new Y.Map()
-    yslide.set('id', newSlide.id)
-    yslide.set('title', newSlide.title)
-    yslide.set('elements', new Y.Array())
-    yslide.set('background', newSlide.background)
-    yslides.set(newSlide.id, yslide)
+  const addElement = useCallback(
+    (element: AnySlideElement) => {
+      if (!currentSlide) return
+      doc.addElement(ydoc, currentSlide.id, element)
+      setSelectedId(element.id)
+    },
+    [currentSlide, ydoc]
+  )
+
+  const onAddText = () => addElement(createTextElement(doc.nextZIndex(currentSlide)))
+
+  const onAddShape = (shape: ShapeElement['shape']) => {
+    setShapeMenuOpen(false)
+    addElement(createShapeElement(shape, doc.nextZIndex(currentSlide)))
+  }
+
+  const onPickImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !currentSlide) return
+
+    setUploading(true)
+    try {
+      const [{ width, height }, buffer] = await Promise.all([measureImage(file), file.arrayBuffer()])
+      const store = new BlobStore({ blossomUrl: BLOSSOM_URL })
+      const metadata = await store.upload(new Uint8Array(buffer), file.type, signer as any)
+      const src = metadata.url || `${BLOSSOM_URL.replace(/\/$/, '')}/${metadata.hash}`
+
+      addElement(createImageElement(src, width, height, doc.nextZIndex(currentSlide)))
+      toast.success('Image added')
+    } catch (error) {
+      // Upload failures used to vanish into console.error, so a missing image
+      // looked like the button doing nothing at all.
+      toast.error(`Image upload failed: ${(error as Error).message}`, { duration: 8000 })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const onSave = async () => {
+    try {
+      await persistenceControls.save()
+      toast.success('Presentation saved')
+    } catch (error) {
+      toast.error(`Could not save: ${(error as Error).message}`, { duration: 8000 })
+    }
+  }
+
+  const editingElement = editingId
+    ? (currentSlide?.elements.find((el) => el.id === editingId) as TextElement | undefined)
+    : undefined
+
+  const saveLabel = persistenceState.saving
+    ? 'Saving…'
+    : persistenceState.dirty
+      ? 'Save'
+      : persistenceState.lastSave
+        ? 'Saved'
+        : 'Save'
+
+  const status = useMemo(() => {
+    if (persistenceState.loading) return 'Loading…'
+    if (persistenceState.saving) return 'Saving…'
+    if (persistenceState.error) return `Save failed — ${persistenceState.error.message}`
+    if (persistenceState.lastSave) {
+      return `Saved ${new Date(persistenceState.lastSave.timestamp).toLocaleTimeString()}`
+    }
+    return persistenceState.dirty ? 'Unsaved changes' : 'No changes yet'
+  }, [persistenceState])
+
+  if (presenting && slides.length > 0) {
+    return (
+      <PresentMode
+        slides={slides}
+        index={currentIndex}
+        images={imagesRef.current}
+        onIndexChange={(index) => setCurrentSlideId(slides[index]?.id ?? null)}
+        onExit={() => setPresenting(false)}
+      />
+    )
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', flex: 1 }}>
-        {/* Slide Thumbnails Panel */}
-        <div style={{
-          width: '200px',
-          backgroundColor: 'var(--cloistr-bg-elevated)',
-          borderRight: '1px solid var(--cloistr-border)',
-          overflowY: 'auto',
-          padding: '1rem'
-        }}>
-          <h3>Slides</h3>
-          <button onClick={addNewSlide} style={{ width: '100%', marginBottom: '1rem' }}>
-            + Add Slide
-          </button>
+    <div className="slides-shell">
+      <div className="slides-body">
+        {/* Slide thumbnails — a sidebar on desktop, a scrolling strip on mobile */}
+        <aside className="slides-rail" aria-label="Slides">
+          <div className="slides-rail-actions">
+            <button type="button" onClick={() => setCurrentSlideId(doc.createSlide(ydoc))}>
+              + Slide
+            </button>
+          </div>
 
-          {presentation.slides.map((slide, index) => (
-            <div
-              key={slide.id}
-              onClick={() => setCurrentSlideIndex(index)}
-              style={{
-                padding: '0.5rem',
-                marginBottom: '0.5rem',
-                backgroundColor: index === currentSlideIndex ? 'var(--cloistr-bg-hover)' : 'var(--cloistr-bg-elevated)',
-                border: '1px solid var(--cloistr-border)',
-                cursor: 'pointer',
-                borderRadius: '4px',
+          <ol className="slides-rail-list">
+            {slides.map((slide, index) => (
+              <li key={slide.id}>
+                <button
+                  type="button"
+                  className={`slides-thumb${slide.id === currentSlideId ? ' is-active' : ''}`}
+                  aria-current={slide.id === currentSlideId}
+                  onClick={() => {
+                    setCurrentSlideId(slide.id)
+                    setSelectedId(null)
+                  }}
+                >
+                  <span className="slides-thumb-title">
+                    {index + 1}. {slide.title}
+                  </span>
+                  <span className="slides-thumb-meta">
+                    {slide.elements.length} element{slide.elements.length === 1 ? '' : 's'}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </aside>
+
+        <div className="slides-main">
+          <div className="slides-toolbar">
+            <button type="button" onClick={onAddText} disabled={!currentSlide}>
+              Add text
+            </button>
+
+            <div className="slides-menu">
+              <button
+                type="button"
+                aria-expanded={shapeMenuOpen}
+                aria-haspopup="menu"
+                disabled={!currentSlide}
+                onClick={() => setShapeMenuOpen((open) => !open)}
+              >
+                Add shape ▾
+              </button>
+              {shapeMenuOpen && (
+                <div className="slides-menu-list" role="menu">
+                  {SHAPES.map(({ shape, label }) => (
+                    <button key={shape} type="button" role="menuitem" onClick={() => onAddShape(shape)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!currentSlide || uploading}
+            >
+              {uploading ? 'Uploading…' : 'Add image'}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={onPickImage}
+            />
+
+            <button
+              type="button"
+              onClick={() => setPresenting(true)}
+              disabled={slides.length === 0}
+            >
+              Present
+            </button>
+
+            <button
+              type="button"
+              className="slides-danger slides-toolbar-delete"
+              disabled={!currentSlide || slides.length <= 1}
+              onClick={() => {
+                if (currentSlide) doc.deleteSlide(ydoc, currentSlide.id)
               }}
             >
-              <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
-                {index + 1}. {slide.title}
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--cloistr-text-muted)' }}>
-                {slide.elements.length} elements
-              </div>
-            </div>
-          ))}
-        </div>
+              Delete slide
+            </button>
 
-        {/* Main Canvas Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {/* Toolbar */}
-          <div style={{
-            padding: '0.5rem',
-            backgroundColor: 'var(--cloistr-bg-elevated)',
-            borderBottom: '1px solid var(--cloistr-border)',
-            display: 'flex',
-            gap: '0.5rem',
-            alignItems: 'center'
-          }}>
-            <button onClick={addTextElement}>Add Text</button>
-            <button onClick={() => console.log('Add Shape')}>Add Shape</button>
-            <button onClick={() => console.log('Add Image')}>Add Image</button>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <label>Zoom:</label>
-              <input
-                type="range"
-                min="0.1"
-                max="3"
-                step="0.1"
-                value={zoom}
-                onChange={(e) => setZoom(parseFloat(e.target.value))}
-              />
-              <span>{Math.round(zoom * 100)}%</span>
-            </div>
-          </div>
-
-          {/* Canvas Container */}
-          <div style={{
-            flex: 1,
-            position: 'relative',
-            overflow: 'hidden',
-            backgroundColor: 'var(--cloistr-bg-hover)'
-          }}>
-            <canvas
-              ref={canvasRef}
-              width={800}
-              height={600}
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-              }}
-              onMouseDown={(e) => {
-                console.log('Canvas clicked:', e.clientX, e.clientY)
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Properties Panel */}
-        <div style={{
-          width: '250px',
-          backgroundColor: 'var(--cloistr-bg-elevated)',
-          borderLeft: '1px solid var(--cloistr-border)',
-          padding: '1rem'
-        }}>
-          <h3>Properties</h3>
-          {selectedElementIds.length > 0 ? (
-            <div>
-              <p>Selected: {selectedElementIds.length} element(s)</p>
-            </div>
-          ) : (
-            <div>
-              <h4>Slide Properties</h4>
-              <label>
-                Background Color:
+            <div className="slides-toolbar-right">
+              <label className="slides-zoom">
+                <span>Zoom</span>
                 <input
-                  type="color"
-                  value={currentSlide?.background.value || '#ffffff'}
-                  onChange={(e) => {
-                    if (!currentSlide) return
-                    const updatedSlide: Slide = {
-                      ...currentSlide,
-                      background: { type: 'color' as const, value: e.target.value },
-                      updatedAt: Date.now(),
-                    }
-                    const updatedPresentation = {
-                      ...presentation,
-                      slides: presentation.slides.map((slide, index) =>
-                        index === currentSlideIndex ? updatedSlide : slide
-                      ),
-                    }
-                    onPresentationChange(updatedPresentation)
+                  type="range"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={zoom}
+                  aria-label="Zoom"
+                  onChange={(event) => setZoom(parseFloat(event.target.value))}
+                />
+                <span>{Math.round(zoom * 100)}%</span>
+              </label>
+
+              <button
+                type="button"
+                className="slides-panel-toggle"
+                aria-expanded={panelOpen}
+                onClick={() => setPanelOpen((open) => !open)}
+              >
+                {panelOpen ? 'Hide properties' : 'Properties'}
+              </button>
+            </div>
+          </div>
+
+          <div className="slides-canvas-scroll">
+            <div className="slides-canvas-wrap" style={{ width: `${zoom * 100}%` }}>
+              <canvas
+                ref={canvasRef}
+                width={SLIDE_WIDTH}
+                height={SLIDE_HEIGHT}
+                className="slides-canvas"
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                onDoubleClick={onDoubleClick}
+              />
+
+              {editingElement && currentSlide && (
+                <textarea
+                  className="slides-text-overlay"
+                  autoFocus
+                  value={editingElement.content}
+                  style={{
+                    left: `${(editingElement.x / SLIDE_WIDTH) * 100}%`,
+                    top: `${(editingElement.y / SLIDE_HEIGHT) * 100}%`,
+                    width: `${(editingElement.width / SLIDE_WIDTH) * 100}%`,
+                    height: `${(editingElement.height / SLIDE_HEIGHT) * 100}%`,
+                    fontSize: `${editingElement.fontSize / scale}px`,
+                    fontFamily: editingElement.fontFamily,
+                    lineHeight: editingElement.lineHeight,
+                    textAlign: editingElement.textAlign,
+                    color: editingElement.color,
+                  }}
+                  onChange={(event) =>
+                    doc.updateElement(ydoc, currentSlide.id, editingElement.id, {
+                      content: event.target.value,
+                    })
+                  }
+                  onBlur={() => setEditingId(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setEditingId(null)
                   }}
                 />
-              </label>
+              )}
             </div>
-          )}
+          </div>
         </div>
+
+        <aside className={`slides-panel${panelOpen ? ' is-open' : ''}`} aria-label="Properties">
+          <PropertiesPanel
+            slide={currentSlide}
+            element={selectedElement}
+            onElementChange={(patch) => {
+              if (currentSlide && selectedId) doc.updateElement(ydoc, currentSlide.id, selectedId, patch)
+            }}
+            onSlideChange={(patch) => {
+              if (currentSlide) doc.updateSlide(ydoc, currentSlide.id, patch)
+            }}
+            onDeleteElement={() => {
+              if (currentSlide && selectedId) {
+                doc.deleteElement(ydoc, currentSlide.id, selectedId)
+                setSelectedId(null)
+              }
+            }}
+          />
+        </aside>
       </div>
 
-      {/* Status bar */}
-      <div style={{
-        padding: '0.5rem 1rem',
-        backgroundColor: 'var(--cloistr-bg-elevated)',
-        borderTop: '1px solid var(--cloistr-border)',
-        fontSize: '0.875rem',
-        color: 'var(--cloistr-text-muted)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <span>Document: {documentId}</span>
-        <span>
-          {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-          {' · '}
-          {peerCount + 1} user{peerCount > 0 ? 's' : ''} online
-          {' · '}
-          {persistenceState.loading ? '⏳ Loading...' :
-           persistenceState.saving ? '💾 Saving...' :
-           persistenceState.lastSave ? `✓ Saved ${new Date(persistenceState.lastSave.timestamp).toLocaleTimeString()}` :
-           '○ Not saved'}
+      <div className="slides-status">
+        <span className="slides-status-doc" title={documentId}>
+          {isConnected ? '🟢' : '🔴'} {peerCount + 1} online
         </span>
-        <button
-          onClick={handleSave}
-          disabled={!persistenceState.initialized || persistenceState.saving || !persistenceState.dirty}
-          style={{
-            padding: '0.25rem 0.5rem',
-            fontSize: '0.75rem',
-            border: '1px solid var(--cloistr-border)',
-            borderRadius: '0.25rem',
-            backgroundColor: persistenceState.dirty ? 'var(--cloistr-info)' : 'var(--cloistr-success)',
-            color: 'white',
-            cursor: persistenceState.dirty ? 'pointer' : 'default',
-            opacity: (!persistenceState.initialized || persistenceState.saving || !persistenceState.dirty) ? 0.5 : 1,
-          }}
-        >
-          {persistenceState.saving ? 'Saving...' : persistenceState.dirty ? 'Save' : 'Saved'}
+        <span>{status}</span>
+        <button type="button" onClick={onSave} disabled={!persistenceState.initialized || persistenceState.saving}>
+          {saveLabel}
         </button>
       </div>
     </div>

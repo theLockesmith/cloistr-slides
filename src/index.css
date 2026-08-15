@@ -3,8 +3,10 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
+  /* Follow the design tokens in both directions. This was a hardcoded white
+     with a prefers-color-scheme override, so anyone who picked light mode while
+     their OS was dark got white text on a light background. */
+  color: var(--cloistr-text);
   background-color: var(--cloistr-bg);
 
   font-synthesis: none;
@@ -18,7 +20,9 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -27,15 +31,10 @@ html, body, #root {
 }
 
 body {
-  display: flex;
-  place-items: center;
   min-width: 320px;
-  min-height: 100vh;
 }
 
 #root {
-  width: 100%;
-  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -50,40 +49,431 @@ a:hover {
 }
 
 h1 {
-  font-size: 3.2em;
+  font-size: clamp(1.75rem, 5vw, 3rem);
   line-height: 1.1;
   margin: 0;
 }
 
 button {
   border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
+  border: 1px solid var(--cloistr-border);
+  padding: 0.45em 0.9em;
+  font-size: 0.95rem;
   font-weight: 500;
   font-family: inherit;
   background-color: var(--cloistr-bg-elevated);
-  color: inherit;
+  color: var(--cloistr-text);
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: border-color 0.2s;
 }
-button:hover {
+button:hover:not(:disabled) {
   border-color: var(--cloistr-primary);
 }
-button:focus,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 2px solid var(--cloistr-primary);
+  outline-offset: 2px;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: var(--cloistr-text);
-    background-color: var(--cloistr-bg);
+/* ---------------------------------------------------------------- app shell */
+
+.slides-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100dvh;
+}
+
+.slides-main-region {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.slides-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.slides-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------- slide rail */
+
+.slides-rail {
+  width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  overflow-y: auto;
+  background-color: var(--cloistr-bg-elevated);
+  border-right: 1px solid var(--cloistr-border);
+}
+
+.slides-rail-actions button {
+  width: 100%;
+}
+
+.slides-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.slides-thumb {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  text-align: left;
+  background-color: var(--cloistr-bg);
+}
+
+.slides-thumb.is-active {
+  border-color: var(--cloistr-primary);
+  background-color: var(--cloistr-bg-hover);
+}
+
+.slides-thumb-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.slides-thumb-meta {
+  font-size: 0.7rem;
+  color: var(--cloistr-text-muted);
+}
+
+/* ---------------------------------------------------------------- toolbar */
+
+.slides-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.slides-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--cloistr-bg-elevated);
+  border-bottom: 1px solid var(--cloistr-border);
+}
+
+.slides-toolbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.slides-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--cloistr-text-muted);
+}
+
+.slides-zoom input {
+  width: 110px;
+}
+
+.slides-menu {
+  position: relative;
+}
+
+.slides-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 0.25rem;
+  border: 1px solid var(--cloistr-border);
+  border-radius: 8px;
+  background-color: var(--cloistr-bg-elevated);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
+
+.slides-menu-list button {
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  background: transparent;
+}
+
+.slides-menu-list button:hover {
+  background-color: var(--cloistr-bg-hover);
+}
+
+.slides-danger {
+  border-color: var(--cloistr-error);
+  color: var(--cloistr-error);
+}
+
+/* ----------------------------------------------------------------- canvas */
+
+.slides-canvas-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 1rem;
+  background-color: var(--cloistr-bg-hover);
+}
+
+.slides-canvas-wrap {
+  position: relative;
+  flex-shrink: 0;
+  max-width: none;
+  aspect-ratio: 16 / 9;
+}
+
+.slides-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: #ffffff;
+  border-radius: 2px;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 20%);
+  touch-action: none; /* let pointer drags move elements, not the page */
+}
+
+.slides-text-overlay {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--cloistr-primary);
+  border-radius: 2px;
+  background: rgb(255 255 255 / 92%);
+  resize: none;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------- properties panel */
+
+.slides-panel {
+  width: 280px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  background-color: var(--cloistr-bg-elevated);
+  border-left: 1px solid var(--cloistr-border);
+}
+
+.slides-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.slides-panel-body h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.slides-panel-toggle {
+  display: none;
+}
+
+.slides-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.slides-field-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cloistr-text-muted);
+}
+
+.slides-field input,
+.slides-field select,
+.slides-field textarea {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--cloistr-text);
+  background-color: var(--cloistr-bg);
+  border: 1px solid var(--cloistr-border);
+  border-radius: 6px;
+}
+
+.slides-field input[type='color'] {
+  padding: 0.1rem;
+  height: 2rem;
+}
+
+.slides-field input[type='range'] {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.slides-field textarea {
+  resize: vertical;
+}
+
+.slides-inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.slides-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--cloistr-text-muted);
+}
+
+/* ------------------------------------------------------------- status bar */
+
+.slides-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--cloistr-text-muted);
+  background-color: var(--cloistr-bg-elevated);
+  border-top: 1px solid var(--cloistr-border);
+}
+
+.slides-status-doc {
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------- present mode */
+
+.slides-present {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: #000000;
+}
+
+.slides-present-canvas {
+  max-width: 100%;
+  max-height: 85vh;
+  width: auto;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.slides-present-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #ffffff;
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 900px) {
+  .slides-body {
+    flex-direction: column;
   }
-  a:hover {
-    color: var(--cloistr-primary-hover);
+
+  /* The rail becomes a horizontal filmstrip so the canvas keeps the width. */
+  .slides-rail {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--cloistr-border);
   }
-  button {
-    background-color: var(--cloistr-bg-elevated);
+
+  .slides-rail-actions button {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .slides-rail-list {
+    flex-direction: row;
+  }
+
+  .slides-thumb {
+    width: auto;
+    min-width: 120px;
+  }
+
+  .slides-canvas-scroll {
+    padding: 0.5rem;
+  }
+
+  .slides-toolbar-delete {
+    order: 10;
+  }
+
+  .slides-panel-toggle {
+    display: inline-block;
+  }
+
+  /* Off-canvas sheet — a fixed 280px column left the canvas unusably narrow. */
+  .slides-panel {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: 100%;
+    max-height: 60dvh;
+    border-left: none;
+    border-top: 1px solid var(--cloistr-border);
+    box-shadow: 0 -8px 24px rgb(0 0 0 / 30%);
+    transform: translateY(100%);
+    transition: transform 0.2s ease;
+  }
+
+  .slides-panel.is-open {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slides-panel {
+    transition: none;
   }
 }

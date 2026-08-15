@@ -1,6 +1,11 @@
 stages:
+  - test
   - build
   - smoke
+# NOTE: No deploy stage - ArgoCD handles image updates automatically
+
+variables:
+  NODE_VERSION: "22"
 
 include:
   - project: 'coldforge/ci-templates'
@@ -9,6 +14,30 @@ include:
   - project: 'coldforge/ci-templates'
     ref: main
     file: '/templates/frontend-smoke.yml'
+
+# Type-check and unit tests. The smoke gate only proves the app renders without
+# console errors, which a silently broken toolbar or a document model that never
+# reads back its own writes passes cleanly.
+test:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  timeout: 15 minutes
+  variables:
+    CI: "true"
+  before_script:
+    # Auth must match the registry line in .npmrc by URI prefix or npm ignores it.
+    - echo "//git.aegis-hq.xyz/api/v4/groups/9/-/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
+    - npm ci --no-audit --no-fund
+  script:
+    - npx tsc --noEmit
+    - npm test
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master"
 
 build:
   extends: .kaniko-build

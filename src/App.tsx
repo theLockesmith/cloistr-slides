@@ -1,59 +1,32 @@
-import { useState } from 'react'
 import { SlideEditor } from './components/SlideEditor'
 import { useNostrAuth } from '@cloistr/auth'
 import { getOrCreateDocumentId, getServiceConfig } from '@cloistr/collab-common/config'
 import { Header, Footer, SharedAuthProvider, ToastProvider, LoginPrompt, ThemeProvider } from '@cloistr/ui/components'
 import '@cloistr/ui/styles'
-import type { Presentation } from './types/slide'
+import { useState } from 'react'
 
 // Service configuration from environment
 const config = getServiceConfig()
 
-const INITIAL_PRESENTATION: Presentation = {
-  metadata: {
-    id: crypto.randomUUID(),
-    title: 'New Presentation',
-    description: '',
-    author: '',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    version: 1,
-    tags: [],
-  },
-  slides: [
-    {
-      id: crypto.randomUUID(),
-      title: 'Slide 1',
-      elements: [],
-      background: {
-        type: 'color',
-        value: '#ffffff',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    },
-  ],
-  collaborators: [],
-}
-
 /**
  * Main content - shows login prompt or slide editor based on auth state
+ *
+ * The presentation itself lives in the editor's Yjs document, not here. App
+ * used to own a React copy and pass it down, which meant anything arriving
+ * through Yjs — a loaded snapshot, a collaborator's edit — had nowhere to go.
  */
 function AppContent() {
   const { authState, signer } = useNostrAuth()
   const [documentId] = useState(() => getOrCreateDocumentId('slides'))
-  const [presentation, setPresentation] = useState<Presentation>(INITIAL_PRESENTATION)
 
   return (
-    <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="slides-app">
       <Header activeServiceId="slides" />
 
-      <main style={{ flex: 1, overflow: 'hidden' }}>
+      <main className="slides-main-region">
         {authState.isConnected && signer && authState.pubkey ? (
           <SlideEditor
             documentId={documentId}
-            presentation={presentation}
-            onPresentationChange={setPresentation}
             signer={signer}
             publicKey={authState.pubkey}
             relayUrl={config.relayUrl}
