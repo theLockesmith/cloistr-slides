@@ -122,12 +122,34 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     { autoLoad: true, autoSaveInterval: 60000 }
   )
 
-  // Seed a first slide only once loading has settled. Seeding on mount would
-  // race the snapshot load and merge a stray blank slide into a real deck.
+  // Seed a first slide once loading has settled — seeding on mount would race
+  // the snapshot load and merge a stray blank slide into a real deck.
+  //
+  // BUT `loading` cannot be the only gate. useDocumentPersistence leaves it set
+  // when the initial autoLoad finds no snapshot, which is exactly the case for
+  // a brand-new user — so gating solely on it meant a first-time user got NO
+  // slide, and with no current slide every toolbar button is disabled. An empty
+  // editor you cannot add anything to.
+  //
+  // So: seed as soon as loading clears, or after a bounded wait regardless. The
+  // wait only risks a duplicate blank slide in the rare case where a real load
+  // takes longer than it, which is far better than an unusable editor.
   useEffect(() => {
-    if (seededRef.current || persistenceState.loading) return
-    seededRef.current = true
-    if (doc.slideIds(ydoc).length === 0) doc.createSlide(ydoc)
+    if (seededRef.current) return
+
+    const seed = () => {
+      if (seededRef.current) return
+      seededRef.current = true
+      if (doc.slideIds(ydoc).length === 0) doc.createSlide(ydoc)
+    }
+
+    if (!persistenceState.loading) {
+      seed()
+      return
+    }
+
+    const backstop = setTimeout(seed, 8000)
+    return () => clearTimeout(backstop)
   }, [persistenceState.loading, ydoc])
 
   useEffect(() => {
@@ -351,13 +373,26 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
         ? 'Saved'
         : 'Save'
 
+  // ORDER MATTERS, and getting it wrong made the bar lie.
+  //
+  // `loading` was checked first, so the status read "Loading…" indefinitely —
+  // measured in production: a save completed with PUT /upload -> 200 and the
+  // bar still said "Loading…" ninety seconds later, because
+  // useDocumentPersistence leaves `loading` set when the initial autoLoad finds
+  // no snapshot to restore. The user saw a permanent spinner over a document
+  // that had in fact saved.
+  //
+  // What just happened outranks what is still in flight: an in-progress save,
+  // then an error, then a completed save, and only then the load state — and
+  // even that is suppressed once anything has saved, since by then the initial
+  // load is ancient history no matter what the flag says.
   const status = useMemo(() => {
-    if (persistenceState.loading) return 'Loading…'
     if (persistenceState.saving) return 'Saving…'
     if (persistenceState.error) return `Save failed — ${persistenceState.error.message}`
     if (persistenceState.lastSave) {
       return `Saved ${new Date(persistenceState.lastSave.timestamp).toLocaleTimeString()}`
     }
+    if (persistenceState.loading) return 'Loading…'
     return persistenceState.dirty ? 'Unsaved changes' : 'No changes yet'
   }, [persistenceState])
 
