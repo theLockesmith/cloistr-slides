@@ -421,7 +421,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
 
           <ol className="slides-rail-list">
             {slides.map((slide, index) => (
-              <li key={slide.id}>
+              <li key={slide.id} className="slides-rail-item">
                 <button
                   type="button"
                   className={`slides-thumb${slide.id === currentSlideId ? ' is-active' : ''}`}
@@ -438,6 +438,40 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
                     {slide.elements.length} element{slide.elements.length === 1 ? '' : 's'}
                   </span>
                 </button>
+
+                {/* Reorder and duplicate. moveSlide/duplicateSlide already
+                    existed in the document layer with nothing calling them.
+                    Buttons rather than drag-and-drop: they work with a keyboard
+                    and on a touch screen, where a drag handle in a horizontal
+                    scrolling filmstrip fights the scroll gesture. */}
+                <div className="slides-thumb-actions">
+                  <button
+                    type="button"
+                    aria-label={`Move ${slide.title} up`}
+                    disabled={index === 0}
+                    onClick={() => doc.moveSlide(ydoc, index, index - 1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${slide.title} down`}
+                    disabled={index === slides.length - 1}
+                    onClick={() => doc.moveSlide(ydoc, index, index + 1)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Duplicate ${slide.title}`}
+                    onClick={() => {
+                      const id = doc.duplicateSlide(ydoc, slide.id)
+                      if (id) setCurrentSlideId(id)
+                    }}
+                  >
+                    ⧉
+                  </button>
+                </div>
               </li>
             ))}
           </ol>
