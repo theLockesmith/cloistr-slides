@@ -173,6 +173,46 @@ export function createSlide(doc: Y.Doc, atIndex?: number): string {
   return id
 }
 
+/**
+ * Duplicate a slide, inserting the copy directly after the original.
+ *
+ * Elements get fresh ids — reusing them would make the copy and the original
+ * the same element in the CRDT, so editing one would silently edit both.
+ */
+export function duplicateSlide(doc: Y.Doc, slideId: string): string | null {
+  const slides = slidesMap(doc)
+  const source = slides.get(slideId)
+  if (!source) return null
+
+  const newId = crypto.randomUUID()
+
+  doc.transact(() => {
+    const copy = new Y.Map<any>()
+    copy.set('id', newId)
+    copy.set('title', `${source.get('title') ?? 'Slide'} (copy)`)
+    copy.set('background', { ...(source.get('background') ?? DEFAULT_BACKGROUND) })
+    copy.set('notes', source.get('notes') ?? '')
+    copy.set('createdAt', Date.now())
+    copy.set('updatedAt', Date.now())
+
+    const elements = new Y.Map<YElement>()
+    for (const element of readElements(source)) {
+      const fresh = { ...element, id: crypto.randomUUID() }
+      elements.set(fresh.id, toYElement(fresh))
+    }
+    copy.set('elements', elements)
+
+    slides.set(newId, copy)
+
+    const order = orderArray(doc)
+    const at = order.toArray().indexOf(slideId)
+    order.insert(at >= 0 ? at + 1 : order.length, [newId])
+    touch(doc)
+  })
+
+  return newId
+}
+
 export function deleteSlide(doc: Y.Doc, slideId: string) {
   doc.transact(() => {
     slidesMap(doc).delete(slideId)

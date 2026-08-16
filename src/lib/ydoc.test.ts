@@ -5,6 +5,7 @@ import {
   createSlide,
   deleteElement,
   deleteSlide,
+  duplicateSlide,
   ensureElements,
   moveSlide,
   nextZIndex,
@@ -205,5 +206,50 @@ describe('collaboration', () => {
       expect(elements.find((el) => el.id === one.id)!.x).toBe(111)
       expect(elements.find((el) => el.id === two.id)!.x).toBe(222)
     }
+  })
+})
+
+describe('duplicateSlide', () => {
+  it('inserts the copy directly after the original', () => {
+    const doc = emptyDoc()
+    const a = createSlide(doc)
+    const b = createSlide(doc)
+
+    const copy = duplicateSlide(doc, a)!
+    expect(slideIds(doc)).toEqual([a, copy, b])
+  })
+
+  it('gives copied elements FRESH ids', () => {
+    // Reusing ids would make the copy and the original the same element in the
+    // CRDT — editing one would silently edit both.
+    const doc = emptyDoc()
+    const slideId = createSlide(doc)
+    const original = createTextElement(0)
+    addElement(doc, slideId, original)
+
+    const copyId = duplicateSlide(doc, slideId)!
+    const slides = readSnapshot(doc).slides
+    const copied = slides.find((s) => s.id === copyId)!
+
+    expect(copied.elements).toHaveLength(1)
+    expect(copied.elements[0]!.id).not.toBe(original.id)
+    expect((copied.elements[0] as any).content).toBe(original.content)
+  })
+
+  it('editing the copy does not touch the original', () => {
+    const doc = emptyDoc()
+    const slideId = createSlide(doc)
+    addElement(doc, slideId, createTextElement(0))
+
+    const copyId = duplicateSlide(doc, slideId)!
+    const copyElement = readSnapshot(doc).slides.find((s) => s.id === copyId)!.elements[0]!
+    updateElement(doc, copyId, copyElement.id, { content: 'changed' })
+
+    const originalElement = readSnapshot(doc).slides.find((s) => s.id === slideId)!.elements[0]!
+    expect((originalElement as any).content).toBe('New text')
+  })
+
+  it('returns null for a slide that does not exist', () => {
+    expect(duplicateSlide(emptyDoc(), 'nope')).toBeNull()
   })
 })
