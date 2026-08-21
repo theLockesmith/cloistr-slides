@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
+import jsPDF from 'jspdf'
 import { NostrSyncProvider, useDocumentPersistence } from '@cloistr/collab-common'
 import { BlobStore } from '@cloistr/collab-common/storage'
 import { useToast } from '@cloistr/ui/components'
@@ -68,6 +69,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   const [panelOpen, setPanelOpen] = useState(false)
   const [presenting, setPresenting] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // Loaded images, plus a tick so a decode that finishes after the draw still
   // repaints — without it an image stayed a grey placeholder until some other
@@ -361,6 +363,48 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     }
   }
 
+  /**
+   * Export every slide to a PDF with one slide per page.
+   *
+   * Each slide is drawn to an off-screen canvas at the native 1600×900
+   * resolution and added as a full-page PNG image so the vector structure of
+   * the PDF matches the on-screen canvas exactly. jsPDF handles the pixel-to-
+   * point conversion internally.
+   */
+  const onExportPdf = async () => {
+    if (slides.length === 0) return
+    setExporting(true)
+    try {
+      const offscreen = document.createElement('canvas')
+      offscreen.width = SLIDE_WIDTH
+      offscreen.height = SLIDE_HEIGHT
+      const ctx = offscreen.getContext('2d')
+      if (!ctx) throw new Error('Could not get 2D context for export')
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [SLIDE_WIDTH, SLIDE_HEIGHT],
+        hotfixes: ['px_scaling'],
+      })
+
+      for (let i = 0; i < slides.length; i++) {
+        if (i > 0) pdf.addPage([SLIDE_WIDTH, SLIDE_HEIGHT], 'landscape')
+        drawSlide(ctx, slides[i], { images: imagesRef.current, scale: 1, presenting: true })
+        pdf.addImage(offscreen, 'PNG', 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT)
+      }
+
+      const title = presentation.metadata.title || 'presentation'
+      const filename = `${title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`
+      pdf.save(filename)
+      toast.success('PDF exported')
+    } catch (error) {
+      toast.error(`Export failed: ${(error as Error).message}`, { duration: 8000 })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const editingElement = editingId
     ? (currentSlide?.elements.find((el) => el.id === editingId) as TextElement | undefined)
     : undefined
@@ -518,6 +562,14 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
               hidden
               onChange={onPickImage}
             />
+
+            <button
+              type="button"
+              onClick={onExportPdf}
+              disabled={slides.length === 0 || exporting}
+            >
+              {exporting ? 'Exporting…' : 'Export PDF'}
+            </button>
 
             <button
               type="button"

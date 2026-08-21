@@ -50,6 +50,8 @@ export const PresentMode: React.FC<PresentModeProps> = ({
     if (ctx) drawSlide(ctx, slide, { images, scale: 1, presenting: true })
   }, [slide, images])
 
+  const notes = slide?.notes?.trim() ?? ''
+
   return (
     <div className="slides-present" role="dialog" aria-modal="true" aria-label="Presentation">
       <canvas
@@ -59,6 +61,13 @@ export const PresentMode: React.FC<PresentModeProps> = ({
         className="slides-present-canvas"
         onClick={next}
       />
+
+      {notes && (
+        <div className="slides-present-notes" aria-label="Speaker notes">
+          <span className="slides-present-notes-label">Notes</span>
+          <p className="slides-present-notes-text">{notes}</p>
+        </div>
+      )}
 
       <div className="slides-present-controls">
         <button type="button" onClick={previous} disabled={index === 0} aria-label="Previous slide">

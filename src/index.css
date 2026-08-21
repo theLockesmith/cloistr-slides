@@ -426,6 +426,34 @@ button:focus-visible {
   color: #ffffff;
 }
 
+/* Speaker notes shown to the presenter below the slide canvas. Only visible
+   when a slide has non-empty notes. Hidden from the audience because this
+   entire overlay is inside the presenter's full-screen window. */
+.slides-present-notes {
+  width: min(100%, 960px);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 10%);
+  border: 1px solid rgb(255 255 255 / 20%);
+}
+
+.slides-present-notes-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(255 255 255 / 55%);
+  margin-bottom: 0.35rem;
+}
+
+.slides-present-notes-text {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: #ffffff;
+  white-space: pre-wrap;
+}
+
 /* ------------------------------------------------------------- responsive */
 
 @media (max-width: 900px) {

@@ -165,6 +165,30 @@ describe('slide properties', () => {
     expect(slide.background.value).toBe('#ff0000')
     expect(slide.notes).toBe('remember to breathe')
   })
+
+  it('emits a Yjs update event when background changes — the hook that marks dirty', () => {
+    // Regression guard for the background-colour persistence defect.
+    //
+    // The persistence layer marks dirty by listening to the ydoc 'update'
+    // event. This test verifies that updateSlide() with a background change
+    // triggers that event with a non-persistence origin, which is the exact
+    // mechanism useDocumentPersistence relies on to set dirty=true.
+    const doc = emptyDoc()
+    const slideId = createSlide(doc)
+
+    let updateCount = 0
+    let lastOrigin: string | null | undefined = 'sentinel' // initial value ≠ any real origin
+    doc.on('update', (_update: Uint8Array, origin: unknown) => {
+      updateCount++
+      lastOrigin = origin as string | null | undefined
+    })
+
+    updateSlide(doc, slideId, { background: { type: 'color', value: '#ff6600' } })
+
+    expect(updateCount).toBeGreaterThan(0)
+    expect(lastOrigin).not.toBe('persistence') // must NOT be the persistence origin
+    expect(readSnapshot(doc).slides[0]!.background.value).toBe('#ff6600')
+  })
 })
 
 describe('collaboration', () => {
