@@ -87,17 +87,7 @@ export interface ViewState {
   isPresenting: boolean;
 }
 
-export interface SlideTheme {
-  name: string;
-  fonts: {
-    heading: string;
-    body: string;
-  };
-  colors: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
-    text: string;
-  };
-}
+// SlideTheme is planned for a future themes feature (colour palette + font
+// pairing). It is not yet implemented in the editor or renderer. Define it
+// here when the theme picker and metadataMap wiring are added together so
+// there is no dead type living in the codebase in the meantime.

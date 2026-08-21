@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import type { AnySlideElement, ImageElement, ShapeElement, Slide, TextElement } from '../types/slide'
 
 interface PropertiesPanelProps {
@@ -166,6 +166,64 @@ function ImageProperties({
   )
 }
 
+/**
+ * Background colour input for the slide-level properties panel.
+ *
+ * The controlled React `onChange` handler handles real user interaction with the
+ * native colour picker. Native DOM event listeners are also attached (via ref)
+ * so that programmatically dispatched 'input' and 'change' events — as produced
+ * by Playwright's `evaluate` approach and some testing frameworks — trigger the
+ * same update path. React's event delegation fires after element-level native
+ * listeners in the bubble phase, so in a real browser both paths fire with the
+ * same value (idempotent for Yjs); in test-driven dispatch only the native path
+ * reliably fires.
+ */
+function BackgroundColorInput({
+  value,
+  disabled,
+  onColorChange,
+}: {
+  value: string
+  disabled: boolean
+  onColorChange: (color: string) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+
+  // Keep a stable ref to the latest callback so the native listener closure
+  // never captures a stale copy.
+  const callbackRef = useRef(onColorChange)
+  useEffect(() => {
+    callbackRef.current = onColorChange
+  })
+
+  // Attach native listeners once on mount. These fire before React's delegated
+  // listeners and handle programmatic event dispatch (e.g. Playwright evaluate).
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const handle = (e: Event) => {
+      const color = (e.target as HTMLInputElement).value
+      if (color) callbackRef.current(color)
+    }
+    el.addEventListener('input', handle)
+    el.addEventListener('change', handle)
+    return () => {
+      el.removeEventListener('input', handle)
+      el.removeEventListener('change', handle)
+    }
+  }, []) // stable — runs once per mount
+
+  return (
+    <input
+      ref={ref}
+      type="color"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onColorChange(e.target.value)}
+    />
+  )
+}
+
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   slide,
   element,
@@ -173,6 +231,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onSlideChange,
   onDeleteElement,
 }) => {
+  const handleBackgroundChange = useCallback(
+    (color: string) => onSlideChange({ background: { type: 'color', value: color } }),
+    [onSlideChange],
+  )
+
   if (element) {
     return (
       <div className="slides-panel-body">
@@ -249,11 +312,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         />
       </Field>
       <Field label="Background">
-        <input
-          type="color"
+        <BackgroundColorInput
           value={slide?.background?.value ?? '#ffffff'}
           disabled={!slide}
-          onChange={(e) => onSlideChange({ background: { type: 'color', value: e.target.value } })}
+          onColorChange={handleBackgroundChange}
         />
       </Field>
       <Field label="Speaker notes">
