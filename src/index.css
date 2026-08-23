@@ -711,3 +711,307 @@ button:focus-visible {
     transition: none;
   }
 }
+
+/* ============================================================ menu bar === */
+
+.slides-menubar {
+  display: flex;
+  align-items: center;
+  background-color: var(--cloistr-bg-elevated);
+  border-bottom: 1px solid var(--cloistr-border);
+  /* The menu bar is a full-width strip above the toolbar. On desktop it shows
+     all six top-level triggers. On mobile it shows only the hamburger. */
+}
+
+/* ── Desktop menu items ─────────────────────────────────────────────────── */
+
+.slides-menubar-inner {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+
+.slides-menubar-entry {
+  position: relative;
+}
+
+.slides-menubar-trigger {
+  display: block;
+  padding: 0.3rem 0.65rem;
+  border: none;
+  border-radius: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--cloistr-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.1s;
+  min-height: 0;
+}
+
+.slides-menubar-trigger:hover,
+.slides-menubar-trigger.is-open {
+  background-color: var(--cloistr-bg-hover);
+}
+
+.slides-menubar-trigger:focus-visible {
+  outline: 2px solid var(--cloistr-primary);
+  outline-offset: -2px;
+}
+
+/* ── Dropdown ───────────────────────────────────────────────────────────── */
+
+.slides-menubar-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 200;
+  min-width: 220px;
+  padding: 0.3rem;
+  border: 1px solid var(--cloistr-border);
+  border-radius: 8px;
+  background-color: var(--cloistr-bg-elevated);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+  /* Prevent the dropdown from triggering the outer scroll on narrow viewports */
+  overflow: hidden;
+}
+
+.slides-menubar-menuitem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.4rem 0.65rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 400;
+  background: transparent;
+  color: var(--cloistr-text);
+  text-align: left;
+  cursor: pointer;
+  gap: 0.5rem;
+  transition: background-color 0.1s;
+}
+
+.slides-menubar-menuitem:hover:not(.is-disabled) {
+  background-color: var(--cloistr-bg-hover);
+}
+
+.slides-menubar-menuitem:focus-visible {
+  outline: 2px solid var(--cloistr-primary);
+  outline-offset: -2px;
+}
+
+.slides-menubar-menuitem.is-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.slides-menubar-menuitem.is-danger {
+  color: var(--cloistr-error);
+}
+
+.slides-menubar-menuitem-label {
+  flex: 1;
+}
+
+.slides-menubar-menuitem-shortcut {
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--cloistr-text-muted);
+  background: transparent;
+  border: none;
+  padding: 0;
+  letter-spacing: 0.02em;
+}
+
+.slides-menubar-sep {
+  height: 1px;
+  margin: 0.25rem 0.4rem;
+  background-color: var(--cloistr-border);
+}
+
+/* ── Mobile hamburger (hidden on desktop) ───────────────────────────────── */
+
+.slides-menubar-hamburger {
+  display: none;
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: var(--cloistr-text);
+  align-items: center;
+}
+
+.slides-menubar-hamburger:focus-visible {
+  outline: 2px solid var(--cloistr-primary);
+  outline-offset: 2px;
+}
+
+/* Three-line icon */
+.slides-hamburger-icon {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 20px;
+  height: 20px;
+}
+
+.slides-hamburger-icon span {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background-color: currentColor;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+/* Animate to X when open */
+.slides-hamburger-icon.is-open span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.slides-hamburger-icon.is-open span:nth-child(2) {
+  opacity: 0;
+}
+.slides-hamburger-icon.is-open span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+/* ── Mobile overlay ─────────────────────────────────────────────────────── */
+
+.slides-mobile-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--cloistr-bg-elevated);
+  overflow-y: auto;
+}
+
+.slides-mobile-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--cloistr-border);
+  font-size: 1rem;
+}
+
+.slides-mobile-menu-close {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--cloistr-text-muted);
+  padding: 0.25rem 0.5rem;
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slides-mobile-menu-body {
+  flex: 1;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.slides-mobile-section {
+  border: 1px solid var(--cloistr-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.slides-mobile-section-title {
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  background-color: var(--cloistr-bg);
+}
+
+.slides-mobile-section-title::-webkit-details-marker {
+  display: none;
+}
+
+.slides-mobile-section-title::after {
+  content: '›';
+  float: right;
+  transition: transform 0.2s;
+}
+
+details[open] .slides-mobile-section-title::after {
+  transform: rotate(90deg);
+}
+
+.slides-mobile-section-items {
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+}
+
+.slides-mobile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  background: transparent;
+  color: var(--cloistr-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.slides-mobile-item:hover:not(.is-disabled) {
+  background-color: var(--cloistr-bg-hover);
+}
+
+.slides-mobile-item.is-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.slides-mobile-item.is-danger {
+  color: var(--cloistr-error);
+}
+
+.slides-mobile-shortcut {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--cloistr-text-muted);
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ── Responsive: show hamburger, hide desktop bar at ≤768 px ─────────────── */
+
+@media (max-width: 768px) {
+  .slides-menubar-inner {
+    display: none;
+  }
+
+  .slides-menubar-hamburger {
+    display: flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slides-hamburger-icon span {
+    transition: none;
+  }
+}
