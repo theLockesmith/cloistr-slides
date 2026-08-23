@@ -101,6 +101,7 @@ function readSlide(yslide: YSlide, index: number): Slide {
     elements: readElements(yslide),
     background: yslide.get('background') ?? DEFAULT_BACKGROUND,
     notes: yslide.get('notes') ?? '',
+    transition: yslide.get('transition') ?? 'none',
     createdAt: yslide.get('createdAt') ?? 0,
     updatedAt: yslide.get('updatedAt') ?? 0,
   }
@@ -119,6 +120,7 @@ export function readSnapshot(doc: Y.Doc): Presentation {
     updatedAt: meta.get('updatedAt') ?? 0,
     version: meta.get('version') ?? 1,
     tags: meta.get('tags') ?? [],
+    themeId: meta.get('themeId') ?? undefined,
   }
 
   return {
@@ -148,6 +150,20 @@ export function initMetadata(doc: Y.Doc, seed: Partial<PresentationMetadata>) {
     if (!meta.get('createdAt')) meta.set('createdAt', seed.createdAt ?? Date.now())
     if (!meta.get('version')) meta.set('version', 1)
     if (seed.author && !meta.get('author')) meta.set('author', seed.author)
+  })
+}
+
+/**
+ * Apply a partial patch to presentation metadata (title, themeId, etc.).
+ * Only the fields included in `patch` are written; others are not touched.
+ */
+export function updateMetadata(doc: Y.Doc, patch: Partial<PresentationMetadata>) {
+  doc.transact(() => {
+    const meta = metadataMap(doc)
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) meta.set(key, value)
+    }
+    meta.set('updatedAt', Date.now())
   })
 }
 

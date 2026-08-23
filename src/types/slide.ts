@@ -51,6 +51,25 @@ export interface SlideBackground {
   value: string; // hex color, gradient CSS, or image URL
 }
 
+/** A slide theme defines visual defaults applied to every new slide. */
+export interface SlideTheme {
+  id: string;
+  name: string;
+  /** Slide background. */
+  background: SlideBackground;
+  /** Primary text colour (applied to new text elements). */
+  textColor: string;
+  /** Accent colour (borders, highlights). */
+  accentColor: string;
+  /** Font family for body text. */
+  fontFamily: string;
+  /** Font family for headings (optional; falls back to fontFamily). */
+  headingFontFamily?: string;
+}
+
+/** Transition applied when moving FROM this slide to the next. */
+export type SlideTransition = 'none' | 'fade' | 'slide' | 'zoom';
+
 export interface Slide {
   id: string;
   title: string;
@@ -59,6 +78,8 @@ export interface Slide {
   createdAt: number;
   updatedAt: number;
   notes?: string;
+  /** Transition from this slide to the next. Defaults to 'none'. */
+  transition?: SlideTransition;
 }
 
 export interface PresentationMetadata {
@@ -70,6 +91,8 @@ export interface PresentationMetadata {
   updatedAt: number;
   version: number;
   tags: string[];
+  /** Active theme id. Resolved against BUILT_IN_THEMES. */
+  themeId?: string;
 }
 
 export interface Presentation {
@@ -86,8 +109,3 @@ export interface ViewState {
   selectedElementIds: string[];
   isPresenting: boolean;
 }
-
-// SlideTheme is planned for a future themes feature (colour palette + font
-// pairing). It is not yet implemented in the editor or renderer. Define it
-// here when the theme picker and metadataMap wiring are added together so
-// there is no dead type living in the codebase in the meantime.

@@ -277,3 +277,93 @@ describe('duplicateSlide', () => {
     expect(duplicateSlide(emptyDoc(), 'nope')).toBeNull()
   })
 })
+
+import { initMetadata, updateMetadata } from './ydoc'
+
+describe('slide transition', () => {
+  it('defaults to "none" when not set', () => {
+    const doc = emptyDoc()
+    const slideId = createSlide(doc)
+    const slide = readSnapshot(doc).slides.find((s) => s.id === slideId)!
+    expect(slide.transition).toBe('none')
+  })
+
+  it('persists a transition set via updateSlide', () => {
+    const doc = emptyDoc()
+    const slideId = createSlide(doc)
+    updateSlide(doc, slideId, { transition: 'fade' })
+    const slide = readSnapshot(doc).slides.find((s) => s.id === slideId)!
+    expect(slide.transition).toBe('fade')
+  })
+
+  it('each valid transition value round-trips', () => {
+    for (const t of ['none', 'fade', 'slide', 'zoom'] as const) {
+      const doc = emptyDoc()
+      const slideId = createSlide(doc)
+      updateSlide(doc, slideId, { transition: t })
+      expect(readSnapshot(doc).slides[0]!.transition).toBe(t)
+    }
+  })
+
+  it('resets transition back to none', () => {
+    const doc = emptyDoc()
+    const slideId = createSlide(doc)
+    updateSlide(doc, slideId, { transition: 'zoom' })
+    updateSlide(doc, slideId, { transition: 'none' })
+    expect(readSnapshot(doc).slides[0]!.transition).toBe('none')
+  })
+})
+
+describe('presentation themeId', () => {
+  it('is undefined in a fresh document', () => {
+    const doc = emptyDoc()
+    expect(readSnapshot(doc).metadata.themeId).toBeUndefined()
+  })
+
+  it('is stored and read back via updateMetadata', () => {
+    const doc = emptyDoc()
+    updateMetadata(doc, { themeId: 'dark' })
+    expect(readSnapshot(doc).metadata.themeId).toBe('dark')
+  })
+
+  it('can be changed to a different theme', () => {
+    const doc = emptyDoc()
+    updateMetadata(doc, { themeId: 'ocean' })
+    updateMetadata(doc, { themeId: 'forest' })
+    expect(readSnapshot(doc).metadata.themeId).toBe('forest')
+  })
+
+  it('does not affect other metadata fields', () => {
+    const doc = emptyDoc()
+    initMetadata(doc, { title: 'My Deck' })
+    updateMetadata(doc, { themeId: 'sunset' })
+    expect(readSnapshot(doc).metadata.title).toBe('My Deck')
+  })
+})
+
+describe('updateMetadata', () => {
+  it('updates the title', () => {
+    const doc = emptyDoc()
+    initMetadata(doc, { title: 'Old title' })
+    updateMetadata(doc, { title: 'New title' })
+    expect(readSnapshot(doc).metadata.title).toBe('New title')
+  })
+
+  it('bumps updatedAt', () => {
+    const doc = emptyDoc()
+    const before = Date.now()
+    updateMetadata(doc, { title: 'anything' })
+    const after = Date.now()
+    const ts = readSnapshot(doc).metadata.updatedAt
+    expect(ts).toBeGreaterThanOrEqual(before)
+    expect(ts).toBeLessThanOrEqual(after)
+  })
+
+  it('emits a Yjs update event — required for dirty tracking', () => {
+    const doc = emptyDoc()
+    let fired = false
+    doc.on('update', () => { fired = true })
+    updateMetadata(doc, { themeId: 'mono' })
+    expect(fired).toBe(true)
+  })
+})

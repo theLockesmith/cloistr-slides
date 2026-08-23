@@ -5,11 +5,12 @@ import { NostrSyncProvider, useDocumentPersistence } from '@cloistr/collab-commo
 import { BlobStore } from '@cloistr/collab-common/storage'
 import { useToast } from '@cloistr/ui/components'
 import type { SignerInterface } from '@cloistr/auth'
-import type { AnySlideElement, Presentation, ShapeElement, Slide, TextElement } from '../types/slide'
+import type { AnySlideElement, Presentation, PresentationMetadata, ShapeElement, Slide, TextElement } from '../types/slide'
 import { SLIDE_HEIGHT, SLIDE_WIDTH } from '../types/slide'
 import { drawSlide, handleAt, hitTest, resizeRect, type HandleId } from '../lib/render'
 import { createImageElement, createShapeElement, createTextElement, measureImage } from '../lib/elements'
 import * as doc from '../lib/ydoc'
+import { exportPptx } from '../lib/pptx'
 import { PropertiesPanel } from './PropertiesPanel'
 import { PresentMode } from './PresentMode'
 
@@ -405,6 +406,19 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     }
   }
 
+  const onExportPptx = async () => {
+    if (slides.length === 0) return
+    setExporting(true)
+    try {
+      await exportPptx(presentation, imagesRef.current)
+      toast.success('PPTX exported')
+    } catch (error) {
+      toast.error(`PPTX export failed: ${(error as Error).message}`, { duration: 8000 })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const editingElement = editingId
     ? (currentSlide?.elements.find((el) => el.id === editingId) as TextElement | undefined)
     : undefined
@@ -573,6 +587,14 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
 
             <button
               type="button"
+              onClick={onExportPptx}
+              disabled={slides.length === 0 || exporting}
+            >
+              Export PPTX
+            </button>
+
+            <button
+              type="button"
               onClick={() => setPresenting(true)}
               disabled={slides.length === 0}
             >
@@ -665,11 +687,15 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           <PropertiesPanel
             slide={currentSlide}
             element={selectedElement}
+            metadata={presentation.metadata}
             onElementChange={(patch) => {
               if (currentSlide && selectedId) doc.updateElement(ydoc, currentSlide.id, selectedId, patch)
             }}
             onSlideChange={(patch) => {
               if (currentSlide) doc.updateSlide(ydoc, currentSlide.id, patch)
+            }}
+            onMetadataChange={(patch: Partial<PresentationMetadata>) => {
+              doc.updateMetadata(ydoc, patch)
             }}
             onDeleteElement={() => {
               if (currentSlide && selectedId) {
