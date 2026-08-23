@@ -4,6 +4,7 @@ import jsPDF from 'jspdf'
 import { NostrSyncProvider, useDocumentPersistence } from '@cloistr/collab-common'
 import { BlobStore } from '@cloistr/collab-common/storage'
 import { useToast } from '@cloistr/ui/components'
+import { withSignerRetry } from '@cloistr/ui'
 import type { SignerInterface } from '@cloistr/auth'
 import type { AnySlideElement, Presentation, PresentationMetadata, ShapeElement, Slide, TextElement } from '../types/slide'
 import { SLIDE_HEIGHT, SLIDE_WIDTH } from '../types/slide'
@@ -342,7 +343,12 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     try {
       const [{ width, height }, buffer] = await Promise.all([measureImage(file), file.arrayBuffer()])
       const store = new BlobStore({ blossomUrl: BLOSSOM_URL })
-      const metadata = await store.upload(new Uint8Array(buffer), file.type, signer as any)
+      // Part 2: retry the signing step if it fails for a retryable reason
+      // (relay unreachable, socket closed). A user denial or malformed request
+      // rethrows immediately so it is not retried.
+      const metadata = await withSignerRetry(() =>
+        store.upload(new Uint8Array(buffer), file.type, signer as any)
+      )
       const src = metadata.url || `${BLOSSOM_URL.replace(/\/$/, '')}/${metadata.hash}`
 
       addElement(createImageElement(src, width, height, doc.nextZIndex(currentSlide)))

@@ -8,6 +8,8 @@ import {
   ToastProvider,
   LoginPrompt,
   ThemeProvider,
+  SignerRecovery,
+  useSharedSession,
   useToast,
 } from '@cloistr/ui/components'
 import '@cloistr/ui/styles'
@@ -111,27 +113,85 @@ function useMobileAuthRecovery() {
 /**
  * Main content - shows login prompt or slide editor based on auth state
  *
- * The presentation itself lives in the editor's Yjs document, not here. App
- * used to own a React copy and pass it down, which meant anything arriving
- * through Yjs — a loaded snapshot, a collaborator's edit — had nowhere to go.
+ * Session vs signer reachability are separate facts. An NIP-46 approval
+ * timeout or relay hiccup is a SIGNER REACHABILITY failure, not a session
+ * expiry, and must not send the user to a credential prompt.
+ *
+ * The three states that matter:
+ *   isConnected   true => render the editor
+ *   connectFailed true => render SignerRecovery (session still valid)
+ *   neither       true => render LoginPrompt (genuinely not signed in)
+ *
+ * connectFailed is set when an auth flow (isConnecting) ends without
+ * isConnected becoming true. That covers: relay unreachable during NIP-46
+ * handshake, approval timeout, or the SSO restore failing to reconnect the
+ * signer after a network drop.
  */
 function AppContent() {
   const { authState, signer } = useNostrAuth()
+  const { isResolving } = useSharedSession()
   const [documentId] = useState(() => getOrCreateDocumentId('slides'))
 
   useMobileAuthRecovery()
 
+  const isConnected = !!authState?.isConnected && !!signer && !!authState?.pubkey
+  const isConnecting = !!authState?.isConnecting || !!authState?.isSwitching || isResolving
+
+  // Part 1+3: detect a failed connect attempt so we can surface SignerRecovery
+  // instead of LoginPrompt. wasConnecting tracks whether an auth flow was in
+  // progress so we only fire on genuine attempts, not on the initial idle state.
+  const [connectFailed, setConnectFailed] = useState(false)
+  const wasConnecting = useRef(false)
+
+  useEffect(() => {
+    if (isConnecting) {
+      wasConnecting.current = true
+      setConnectFailed(false)
+      return
+    }
+    if (wasConnecting.current && !isConnected) {
+      wasConnecting.current = false
+      setConnectFailed(true)
+    }
+  }, [isConnecting, isConnected])
+
+  // useMobileAuthRecovery (above) already reloads on visibilitychange, scoped
+  // to the nostrconnect approval window. The signer-resilience branch added a
+  // SECOND visibilitychange reload keyed on connectFailed; keeping both would
+  // reload twice for one event. Only the approval-window one is retained.
+  // Reconnect for an ALREADY-PAIRED session is handled inside @cloistr/ui
+  // 0.27.0 by useRelayReconnect, mounted automatically by SharedAuthProvider,
+  // which reconnects relays without a page reload.
   return (
     <div className="slides-app">
       <Header activeServiceId="slides" />
 
       <main className="slides-main-region">
-        {authState.isConnected && signer && authState.pubkey ? (
+        {isConnected ? (
           <SlideEditor
             documentId={documentId}
             signer={signer}
-            publicKey={authState.pubkey}
+            publicKey={authState.pubkey!}
             relayUrl={config.relayUrl}
+          />
+        ) : connectFailed ? (
+          /*
+           * Parts 1+3: signer was unreachable — session is still valid.
+           * Show recovery; never a credential prompt.
+           *
+           * onRetry reloads so the SSO restore runs again with fresh sockets.
+           * onGoBack clears the failed state so the user can try a different
+           * account or just dismisses the panel; it does NOT touch session
+           * storage or clear auth.
+           */
+          <SignerRecovery
+            error={authState?.error ?? { code: 'CONNECTION_FAILED' }}
+            retrying={isConnecting}
+            onRetry={() => {
+              setConnectFailed(false)
+              window.location.reload()
+            }}
+            onGoBack={() => setConnectFailed(false)}
           />
         ) : (
           <LoginPrompt
