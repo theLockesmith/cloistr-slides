@@ -53,7 +53,7 @@ function useMobileAuthRecovery() {
   // Track connecting state through renders
   useEffect(() => {
     if (!authState.isConnected) {
-      wasConnectingRef.current = authState.isConnecting || true
+      wasConnectingRef.current = authState.isConnecting
     }
   }, [authState.isConnected, authState.isConnecting])
 

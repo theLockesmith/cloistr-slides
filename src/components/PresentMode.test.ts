@@ -115,10 +115,13 @@ describe('animateTransition — guard clause', () => {
   it('does not throw when el is null (guard clause path)', () => {
     // animateTransition receives null when the ref is not yet mounted.
     // The implementation guards: if (!el || type === 'none') return
-    expect(() => {
+    // type must be a parameter so TypeScript cannot narrow it to a literal
+    // and flag `type === 'none'` as TS2367.
+    const guardedFn = (type: SlideTransition) => {
       const el = null
-      if (!el || 'fade' === 'none') return
+      if (!el || type === 'none') return
       // Would throw if not guarded — but we do not reach here.
-    }).not.toThrow()
+    }
+    expect(() => guardedFn('fade')).not.toThrow()
   })
 })
