@@ -11,6 +11,7 @@ import { drawSlide, handleAt, hitTest, resizeRect, type HandleId } from '../lib/
 import { createImageElement, createShapeElement, createTextElement, measureImage } from '../lib/elements'
 import * as doc from '../lib/ydoc'
 import { exportPptx } from '../lib/pptx'
+import { MenuBar, type MenuDef } from './MenuBar'
 import { PropertiesPanel } from './PropertiesPanel'
 import { PresentMode } from './PresentMode'
 
@@ -431,6 +432,422 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
         ? 'Saved'
         : 'Save'
 
+  // ── Menu bar actions ──────────────────────────────────────────────────────
+
+  /**
+   * Build the menu definitions. All actions are closures over the editor
+   * state captured at render time. useMemo prevents a new array reference on
+   * every Yjs update, which would cause MenuBar to reconcile unnecessarily
+   * while a dropdown is open.
+   *
+   * Items that are not yet implemented are listed as disabled with a reason
+   * tooltip rather than omitted — "the structure stays learnable" (spec).
+   *
+   * "COMING SOON" items: File > New, File > Import, File > Print,
+   * Edit > Undo, Edit > Redo, View > Grid View, Insert > Table,
+   * Arrange > Send to Back, Arrange > Align, Arrange > Group.
+   */
+  const menus = useMemo((): MenuDef[] => {
+    const hasSlides = slides.length > 0
+    const hasCurrentSlide = currentSlide !== undefined
+    const hasSelection = selectedId !== null && currentSlide !== undefined
+    const canDeleteSlide = hasCurrentSlide && slides.length > 1
+
+    return [
+      // ── File ──────────────────────────────────────────────────────────────
+      {
+        id: 'file',
+        label: 'File',
+        items: [
+          {
+            id: 'file-new',
+            label: 'New presentation',
+            disabled: true,
+            disabledReason: 'Multi-document support coming soon',
+          },
+          {
+            id: 'file-import',
+            label: 'Import…',
+            disabled: true,
+            disabledReason: 'Import coming soon',
+          },
+          { id: 'file-sep1', isSeparator: true },
+          {
+            id: 'file-save',
+            label: 'Save',
+            shortcut: 'Ctrl+S',
+            disabled: !persistenceState.initialized || persistenceState.saving,
+            disabledReason: persistenceState.saving ? 'Save in progress' : 'Not ready yet',
+            onClick: onSave,
+          },
+          { id: 'file-sep2', isSeparator: true },
+          {
+            id: 'file-export-pptx',
+            label: 'Export PPTX',
+            shortcut: 'Ctrl+Shift+X',
+            disabled: !hasSlides || exporting,
+            disabledReason: exporting ? 'Export in progress' : 'No slides to export',
+            onClick: onExportPptx,
+          },
+          {
+            id: 'file-export-pdf',
+            label: 'Download PDF',
+            shortcut: 'Ctrl+Shift+D',
+            disabled: !hasSlides || exporting,
+            disabledReason: exporting ? 'Export in progress' : 'No slides to export',
+            onClick: onExportPdf,
+          },
+          {
+            id: 'file-print',
+            label: 'Print',
+            disabled: true,
+            disabledReason: 'Print coming soon — use Download PDF for now',
+          },
+        ],
+      },
+
+      // ── Edit ──────────────────────────────────────────────────────────────
+      {
+        id: 'edit',
+        label: 'Edit',
+        items: [
+          {
+            id: 'edit-undo',
+            label: 'Undo',
+            shortcut: 'Ctrl+Z',
+            disabled: true,
+            disabledReason: 'Undo manager not yet configured — coming soon',
+          },
+          {
+            id: 'edit-redo',
+            label: 'Redo',
+            shortcut: 'Ctrl+Y',
+            disabled: true,
+            disabledReason: 'Undo manager not yet configured — coming soon',
+          },
+          { id: 'edit-sep1', isSeparator: true },
+          {
+            id: 'edit-dup-slide',
+            label: 'Duplicate slide',
+            shortcut: 'Ctrl+D',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => {
+              if (currentSlide) {
+                const id = doc.duplicateSlide(ydoc, currentSlide.id)
+                if (id) setCurrentSlideId(id)
+              }
+            },
+          },
+          {
+            id: 'edit-del-slide',
+            label: 'Delete slide',
+            danger: true,
+            disabled: !canDeleteSlide,
+            disabledReason: !hasCurrentSlide
+              ? 'No current slide'
+              : 'Cannot delete the last slide',
+            onClick: () => {
+              if (currentSlide) doc.deleteSlide(ydoc, currentSlide.id)
+            },
+          },
+        ],
+      },
+
+      // ── View ──────────────────────────────────────────────────────────────
+      {
+        id: 'view',
+        label: 'View',
+        items: [
+          {
+            id: 'view-present',
+            label: 'Present',
+            shortcut: 'F5',
+            disabled: !hasSlides,
+            disabledReason: 'No slides to present',
+            onClick: () => setPresenting(true),
+          },
+          {
+            id: 'view-grid',
+            label: 'Grid view',
+            disabled: true,
+            disabledReason: 'Grid view coming soon',
+          },
+          { id: 'view-sep1', isSeparator: true },
+          {
+            id: 'view-speaker-notes',
+            label: 'Speaker notes',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => setPanelOpen(true),
+          },
+          {
+            id: 'view-properties',
+            label: 'Properties panel',
+            onClick: () => setPanelOpen((o) => !o),
+          },
+        ],
+      },
+
+      // ── Insert ────────────────────────────────────────────────────────────
+      {
+        id: 'insert',
+        label: 'Insert',
+        items: [
+          {
+            id: 'insert-slide',
+            label: 'New slide',
+            shortcut: 'Ctrl+M',
+            onClick: () => setCurrentSlideId(doc.createSlide(ydoc)),
+          },
+          { id: 'insert-sep1', isSeparator: true },
+          {
+            id: 'insert-text',
+            label: 'Text box',
+            shortcut: 'T',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: onAddText,
+          },
+          {
+            id: 'insert-image',
+            label: 'Image…',
+            shortcut: 'I',
+            disabled: !hasCurrentSlide || uploading,
+            disabledReason: uploading ? 'Upload in progress' : 'No current slide',
+            onClick: () => fileInputRef.current?.click(),
+          },
+          { id: 'insert-sep2', isSeparator: true },
+          {
+            id: 'insert-shape-rect',
+            label: 'Shape: Rectangle',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => onAddShape('rectangle'),
+          },
+          {
+            id: 'insert-shape-ellipse',
+            label: 'Shape: Ellipse',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => onAddShape('circle'),
+          },
+          {
+            id: 'insert-shape-triangle',
+            label: 'Shape: Triangle',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => onAddShape('triangle'),
+          },
+          {
+            id: 'insert-shape-line',
+            label: 'Shape: Line',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => onAddShape('line'),
+          },
+          { id: 'insert-sep3', isSeparator: true },
+          {
+            id: 'insert-table',
+            label: 'Table',
+            disabled: true,
+            disabledReason: 'Table insertion coming soon',
+          },
+        ],
+      },
+
+      // ── Format ────────────────────────────────────────────────────────────
+      {
+        id: 'format',
+        label: 'Format',
+        items: [
+          {
+            id: 'format-theme',
+            label: 'Theme…',
+            disabled: !hasSlides,
+            disabledReason: 'No slides',
+            onClick: () => setPanelOpen(true),
+          },
+          {
+            id: 'format-background',
+            label: 'Background…',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => setPanelOpen(true),
+          },
+          {
+            id: 'format-transition',
+            label: 'Transition…',
+            disabled: !hasCurrentSlide,
+            disabledReason: 'No current slide',
+            onClick: () => setPanelOpen(true),
+          },
+        ],
+      },
+
+      // ── Arrange ───────────────────────────────────────────────────────────
+      {
+        id: 'arrange',
+        label: 'Arrange',
+        items: [
+          {
+            id: 'arrange-front',
+            label: 'Bring to front',
+            shortcut: 'Ctrl+]',
+            disabled: !hasSelection,
+            disabledReason: 'Select an element first',
+            onClick: () => {
+              if (currentSlide && selectedId) {
+                doc.bringToFront(ydoc, currentSlide.id, selectedId)
+              }
+            },
+          },
+          {
+            id: 'arrange-back',
+            label: 'Send to back',
+            disabled: true,
+            disabledReason: 'Send to back coming soon',
+          },
+          { id: 'arrange-sep1', isSeparator: true },
+          {
+            id: 'arrange-align',
+            label: 'Align…',
+            disabled: true,
+            disabledReason: 'Alignment tools coming soon',
+          },
+          {
+            id: 'arrange-group',
+            label: 'Group',
+            disabled: true,
+            disabledReason: 'Grouping coming soon',
+          },
+        ],
+      },
+    ]
+  }, [
+    slides,
+    currentSlide,
+    selectedId,
+    exporting,
+    uploading,
+    persistenceState.initialized,
+    persistenceState.saving,
+    ydoc,
+    onAddText,
+    onAddShape,
+    onSave,
+    onExportPdf,
+    onExportPptx,
+  ])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+
+  /**
+   * Global shortcut handler for menu-bar commands.
+   *
+   * Guard rules (applied to all shortcuts below unless noted):
+   *   Single-character shortcuts (T, I, F5): skip when editingId is set or
+   *   an input/textarea/select has focus — those keys are typing.
+   *   Ctrl+ combos: always fire (Ctrl+S saving while typing is expected).
+   *
+   * Each shortcut here must match the `shortcut` string in the menus array
+   * above so the menu label and the actual behaviour stay in sync.
+   */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const inText =
+        editingId !== null ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(
+          (document.activeElement as HTMLElement | null)?.tagName ?? '',
+        )
+
+      // F5 — present (single key, but not a letter, so skip the letter guard)
+      if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        if (slides.length > 0) setPresenting(true)
+        return
+      }
+
+      // Letter shortcuts — skip when typing
+      if (!inText && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 't' || e.key === 'T') {
+          e.preventDefault()
+          if (currentSlide) onAddText()
+          return
+        }
+        if (e.key === 'i' || e.key === 'I') {
+          e.preventDefault()
+          if (currentSlide && !uploading) fileInputRef.current?.click()
+          return
+        }
+      }
+
+      // Ctrl / Cmd combos
+      const ctrl = e.ctrlKey || e.metaKey
+      if (!ctrl) return
+
+      // Ctrl+S — save
+      if (e.key === 's' && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        onSave()
+        return
+      }
+
+      // Ctrl+Shift+X — export PPTX
+      if ((e.key === 'x' || e.key === 'X') && e.shiftKey) {
+        e.preventDefault()
+        if (slides.length > 0 && !exporting) onExportPptx()
+        return
+      }
+
+      // Ctrl+Shift+D — download PDF
+      if ((e.key === 'd' || e.key === 'D') && e.shiftKey) {
+        e.preventDefault()
+        if (slides.length > 0 && !exporting) onExportPdf()
+        return
+      }
+
+      // Ctrl+D — duplicate slide
+      if ((e.key === 'd' || e.key === 'D') && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        if (currentSlide) {
+          const id = doc.duplicateSlide(ydoc, currentSlide.id)
+          if (id) setCurrentSlideId(id)
+        }
+        return
+      }
+
+      // Ctrl+M — new slide
+      if ((e.key === 'm' || e.key === 'M') && !e.shiftKey) {
+        e.preventDefault()
+        setCurrentSlideId(doc.createSlide(ydoc))
+        return
+      }
+
+      // Ctrl+] — bring to front
+      if (e.key === ']' && !e.shiftKey) {
+        e.preventDefault()
+        if (currentSlide && selectedId) doc.bringToFront(ydoc, currentSlide.id, selectedId)
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [
+    editingId,
+    currentSlide,
+    slides.length,
+    selectedId,
+    uploading,
+    exporting,
+    ydoc,
+    onAddText,
+    onSave,
+    onExportPdf,
+    onExportPptx,
+  ])
+
   // ORDER MATTERS, and getting it wrong made the bar lie.
   //
   // `loading` was checked first, so the status read "Loading…" indefinitely —
@@ -468,6 +885,8 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
 
   return (
     <div className="slides-shell">
+      <MenuBar menus={menus} />
+
       <div className="slides-body">
         {/* Slide thumbnails — a sidebar on desktop, a scrolling strip on mobile */}
         <aside className="slides-rail" aria-label="Slides">
