@@ -3,7 +3,8 @@ import * as Y from 'yjs'
 import jsPDF from 'jspdf'
 import { NostrSyncProvider, useDocumentPersistence } from '@cloistr/collab-common'
 import { BlobStore } from '@cloistr/collab-common/storage'
-import { useToast } from '@cloistr/ui/components'
+import { AppShell, useToast } from '@cloistr/ui/components'
+import type { MenuSection } from '@cloistr/ui/components'
 import { withSignerRetry } from '@cloistr/ui'
 import type { SignerInterface } from '@cloistr/auth'
 import type { AnySlideElement, Presentation, PresentationMetadata, ShapeElement, Slide, TextElement } from '../types/slide'
@@ -12,7 +13,6 @@ import { drawSlide, handleAt, hitTest, resizeRect, type HandleId } from '../lib/
 import { createImageElement, createShapeElement, createTextElement, measureImage } from '../lib/elements'
 import * as doc from '../lib/ydoc'
 import { exportPptx } from '../lib/pptx'
-import { MenuBar, type MenuDef } from './MenuBar'
 import { PropertiesPanel } from './PropertiesPanel'
 import { PresentMode } from './PresentMode'
 
@@ -441,19 +441,19 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   // ── Menu bar actions ──────────────────────────────────────────────────────
 
   /**
-   * Build the menu definitions. All actions are closures over the editor
-   * state captured at render time. useMemo prevents a new array reference on
-   * every Yjs update, which would cause MenuBar to reconcile unnecessarily
-   * while a dropdown is open.
+   * Build the AppShell menu sections. AppShell takes DATA (MenuSection[]),
+   * not JSX — one definition renders as a horizontal bar on desktop and as
+   * collapsible drawer sections on mobile from a single source.
    *
-   * Items that are not yet implemented are listed as disabled with a reason
-   * tooltip rather than omitted — "the structure stays learnable" (spec).
+   * An item with no `onSelect` renders DISABLED; never an enabled no-op.
+   * Format > Theme… was confirmed enabled-but-inert (opens Properties panel,
+   * no theme section there) — mapped to disabled with a reason here.
    *
    * "COMING SOON" items: File > New, File > Import, File > Print,
    * Edit > Undo, Edit > Redo, View > Grid View, Insert > Table,
    * Arrange > Send to Back, Arrange > Align, Arrange > Group.
    */
-  const menus = useMemo((): MenuDef[] => {
+  const menuSections = useMemo((): MenuSection[] => {
     const hasSlides = slides.length > 0
     const hasCurrentSlide = currentSlide !== undefined
     const hasSelection = selectedId !== null && currentSlide !== undefined
@@ -462,274 +462,191 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     return [
       // ── File ──────────────────────────────────────────────────────────────
       {
-        id: 'file',
         label: 'File',
         items: [
+          { label: 'New presentation', disabledReason: 'Multi-document support coming soon' },
+          { label: 'Import…', disabledReason: 'Import coming soon' },
+          { separator: true },
           {
-            id: 'file-new',
-            label: 'New presentation',
-            disabled: true,
-            disabledReason: 'Multi-document support coming soon',
-          },
-          {
-            id: 'file-import',
-            label: 'Import…',
-            disabled: true,
-            disabledReason: 'Import coming soon',
-          },
-          { id: 'file-sep1', isSeparator: true },
-          {
-            id: 'file-save',
             label: 'Save',
             shortcut: 'Ctrl+S',
-            disabled: !persistenceState.initialized || persistenceState.saving,
-            disabledReason: persistenceState.saving ? 'Save in progress' : 'Not ready yet',
-            onClick: onSave,
+            onSelect: persistenceState.initialized && !persistenceState.saving ? onSave : undefined,
+            disabledReason: !persistenceState.initialized || persistenceState.saving
+              ? (persistenceState.saving ? 'Save in progress' : 'Not ready yet')
+              : undefined,
           },
-          { id: 'file-sep2', isSeparator: true },
+          { separator: true },
           {
-            id: 'file-export-pptx',
             label: 'Export PPTX',
             shortcut: 'Ctrl+Shift+X',
-            disabled: !hasSlides || exporting,
-            disabledReason: exporting ? 'Export in progress' : 'No slides to export',
-            onClick: onExportPptx,
+            onSelect: hasSlides && !exporting ? onExportPptx : undefined,
+            disabledReason: !hasSlides || exporting
+              ? (exporting ? 'Export in progress' : 'No slides to export')
+              : undefined,
           },
           {
-            id: 'file-export-pdf',
             label: 'Download PDF',
             shortcut: 'Ctrl+Shift+D',
-            disabled: !hasSlides || exporting,
-            disabledReason: exporting ? 'Export in progress' : 'No slides to export',
-            onClick: onExportPdf,
+            onSelect: hasSlides && !exporting ? onExportPdf : undefined,
+            disabledReason: !hasSlides || exporting
+              ? (exporting ? 'Export in progress' : 'No slides to export')
+              : undefined,
           },
-          {
-            id: 'file-print',
-            label: 'Print',
-            disabled: true,
-            disabledReason: 'Print coming soon — use Download PDF for now',
-          },
+          { label: 'Print', disabledReason: 'Print coming soon — use Download PDF for now' },
         ],
       },
 
       // ── Edit ──────────────────────────────────────────────────────────────
       {
-        id: 'edit',
         label: 'Edit',
         items: [
+          { label: 'Undo', shortcut: 'Ctrl+Z', disabledReason: 'Undo manager not yet configured — coming soon' },
+          { label: 'Redo', shortcut: 'Ctrl+Y', disabledReason: 'Undo manager not yet configured — coming soon' },
+          { separator: true },
           {
-            id: 'edit-undo',
-            label: 'Undo',
-            shortcut: 'Ctrl+Z',
-            disabled: true,
-            disabledReason: 'Undo manager not yet configured — coming soon',
-          },
-          {
-            id: 'edit-redo',
-            label: 'Redo',
-            shortcut: 'Ctrl+Y',
-            disabled: true,
-            disabledReason: 'Undo manager not yet configured — coming soon',
-          },
-          { id: 'edit-sep1', isSeparator: true },
-          {
-            id: 'edit-dup-slide',
             label: 'Duplicate slide',
             shortcut: 'Ctrl+D',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => {
+            onSelect: hasCurrentSlide ? () => {
               if (currentSlide) {
                 const id = doc.duplicateSlide(ydoc, currentSlide.id)
                 if (id) setCurrentSlideId(id)
               }
-            },
+            } : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'edit-del-slide',
             label: 'Delete slide',
-            danger: true,
-            disabled: !canDeleteSlide,
-            disabledReason: !hasCurrentSlide
-              ? 'No current slide'
-              : 'Cannot delete the last slide',
-            onClick: () => {
+            onSelect: canDeleteSlide ? () => {
               if (currentSlide) doc.deleteSlide(ydoc, currentSlide.id)
-            },
+            } : undefined,
+            disabledReason: !canDeleteSlide
+              ? (!hasCurrentSlide ? 'No current slide' : 'Cannot delete the last slide')
+              : undefined,
           },
         ],
       },
 
       // ── View ──────────────────────────────────────────────────────────────
       {
-        id: 'view',
         label: 'View',
         items: [
           {
-            id: 'view-present',
             label: 'Present',
             shortcut: 'F5',
-            disabled: !hasSlides,
-            disabledReason: 'No slides to present',
-            onClick: () => setPresenting(true),
+            onSelect: hasSlides ? () => setPresenting(true) : undefined,
+            disabledReason: hasSlides ? undefined : 'No slides to present',
           },
+          { label: 'Grid view', disabledReason: 'Grid view coming soon' },
+          { separator: true },
           {
-            id: 'view-grid',
-            label: 'Grid view',
-            disabled: true,
-            disabledReason: 'Grid view coming soon',
-          },
-          { id: 'view-sep1', isSeparator: true },
-          {
-            id: 'view-speaker-notes',
             label: 'Speaker notes',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => setPanelOpen(true),
+            onSelect: hasCurrentSlide ? () => setPanelOpen(true) : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'view-properties',
             label: 'Properties panel',
-            onClick: () => setPanelOpen((o) => !o),
+            onSelect: () => setPanelOpen((o) => !o),
           },
         ],
       },
 
       // ── Insert ────────────────────────────────────────────────────────────
       {
-        id: 'insert',
         label: 'Insert',
         items: [
           {
-            id: 'insert-slide',
             label: 'New slide',
             shortcut: 'Ctrl+M',
-            onClick: () => setCurrentSlideId(doc.createSlide(ydoc)),
+            onSelect: () => setCurrentSlideId(doc.createSlide(ydoc)),
           },
-          { id: 'insert-sep1', isSeparator: true },
+          { separator: true },
           {
-            id: 'insert-text',
             label: 'Text box',
             shortcut: 'T',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: onAddText,
+            onSelect: hasCurrentSlide ? onAddText : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'insert-image',
             label: 'Image…',
             shortcut: 'I',
-            disabled: !hasCurrentSlide || uploading,
-            disabledReason: uploading ? 'Upload in progress' : 'No current slide',
-            onClick: () => fileInputRef.current?.click(),
+            onSelect: hasCurrentSlide && !uploading ? () => fileInputRef.current?.click() : undefined,
+            disabledReason: !hasCurrentSlide || uploading
+              ? (uploading ? 'Upload in progress' : 'No current slide')
+              : undefined,
           },
-          { id: 'insert-sep2', isSeparator: true },
+          { separator: true },
           {
-            id: 'insert-shape-rect',
             label: 'Shape: Rectangle',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => onAddShape('rectangle'),
+            onSelect: hasCurrentSlide ? () => onAddShape('rectangle') : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'insert-shape-ellipse',
             label: 'Shape: Ellipse',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => onAddShape('circle'),
+            onSelect: hasCurrentSlide ? () => onAddShape('circle') : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'insert-shape-triangle',
             label: 'Shape: Triangle',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => onAddShape('triangle'),
+            onSelect: hasCurrentSlide ? () => onAddShape('triangle') : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'insert-shape-line',
             label: 'Shape: Line',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => onAddShape('line'),
+            onSelect: hasCurrentSlide ? () => onAddShape('line') : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
-          { id: 'insert-sep3', isSeparator: true },
-          {
-            id: 'insert-table',
-            label: 'Table',
-            disabled: true,
-            disabledReason: 'Table insertion coming soon',
-          },
+          { separator: true },
+          { label: 'Table', disabledReason: 'Table insertion coming soon' },
         ],
       },
 
       // ── Format ────────────────────────────────────────────────────────────
       {
-        id: 'format',
         label: 'Format',
         items: [
+          // DISABLED: confirmed production bug 2026-08-24 where this was enabled
+          // but clicking it opened the Properties panel, which has no theme
+          // section — enabled-but-inert is the exact pattern the model forbids.
+          { label: 'Theme…', disabledReason: 'Theme editor coming soon' },
           {
-            id: 'format-theme',
-            label: 'Theme…',
-            disabled: !hasSlides,
-            disabledReason: 'No slides',
-            onClick: () => setPanelOpen(true),
-          },
-          {
-            id: 'format-background',
             label: 'Background…',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => setPanelOpen(true),
+            onSelect: hasCurrentSlide ? () => setPanelOpen(true) : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
           {
-            id: 'format-transition',
             label: 'Transition…',
-            disabled: !hasCurrentSlide,
-            disabledReason: 'No current slide',
-            onClick: () => setPanelOpen(true),
+            onSelect: hasCurrentSlide ? () => setPanelOpen(true) : undefined,
+            disabledReason: hasCurrentSlide ? undefined : 'No current slide',
           },
         ],
       },
 
       // ── Arrange ───────────────────────────────────────────────────────────
       {
-        id: 'arrange',
         label: 'Arrange',
         items: [
           {
-            id: 'arrange-front',
             label: 'Bring to front',
             shortcut: 'Ctrl+]',
-            disabled: !hasSelection,
-            disabledReason: 'Select an element first',
-            onClick: () => {
+            onSelect: hasSelection ? () => {
               if (currentSlide && selectedId) {
                 doc.bringToFront(ydoc, currentSlide.id, selectedId)
               }
-            },
+            } : undefined,
+            disabledReason: hasSelection ? undefined : 'Select an element first',
           },
-          {
-            id: 'arrange-back',
-            label: 'Send to back',
-            disabled: true,
-            disabledReason: 'Send to back coming soon',
-          },
-          { id: 'arrange-sep1', isSeparator: true },
-          {
-            id: 'arrange-align',
-            label: 'Align…',
-            disabled: true,
-            disabledReason: 'Alignment tools coming soon',
-          },
-          {
-            id: 'arrange-group',
-            label: 'Group',
-            disabled: true,
-            disabledReason: 'Grouping coming soon',
-          },
+          { label: 'Send to back', disabledReason: 'Send to back coming soon' },
+          { separator: true },
+          { label: 'Align…', disabledReason: 'Alignment tools coming soon' },
+          { label: 'Group', disabledReason: 'Grouping coming soon' },
         ],
       },
-    ]
+    // exactOptionalPropertyTypes: the conditional `onSelect: fn | undefined` pattern
+    // produces a union type that is structurally incompatible with MenuItem's
+    // `onSelect?: () => void` under exactOptionalPropertyTypes. The spread pattern
+    // would require rewriting every item; the cast here is correct because undefined
+    // is stripped at render time by isSeparator() / menuItemState() in AppShell.
+    ] as unknown as MenuSection[]
   }, [
     slides,
     currentSlide,
@@ -890,8 +807,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   }
 
   return (
-    <div className="slides-shell">
-      <MenuBar menus={menus} />
+    <AppShell serviceId="slides" menu={menuSections}>
 
       <div className="slides-body">
         {/* Slide thumbnails — a sidebar on desktop, a scrolling strip on mobile */}
@@ -1141,6 +1057,6 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           {saveLabel}
         </button>
       </div>
-    </div>
+    </AppShell>
   )
 }
