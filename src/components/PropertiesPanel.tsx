@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useRef } from 'react'
-import type { AnySlideElement, ImageElement, ShapeElement, Slide, TextElement } from '../types/slide'
+import type { AnySlideElement, ImageElement, ShapeElement, Slide, SlideTransition, TextElement } from '../types/slide'
+import { BUILT_IN_THEMES } from '../lib/themes'
+import type { PresentationMetadata } from '../types/slide'
 
 interface PropertiesPanelProps {
   slide: Slide | undefined
   element: AnySlideElement | null
+  metadata: PresentationMetadata | undefined
   onElementChange: (patch: Record<string, any>) => void
   onSlideChange: (patch: Partial<Slide>) => void
+  onMetadataChange: (patch: Partial<PresentationMetadata>) => void
   onDeleteElement: () => void
 }
 
@@ -14,6 +18,13 @@ const FONTS = [
   'Georgia, serif',
   'Menlo, monospace',
   'Arial, sans-serif',
+]
+
+const TRANSITIONS: { value: SlideTransition; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'fade', label: 'Fade' },
+  { value: 'slide', label: 'Slide' },
+  { value: 'zoom', label: 'Zoom' },
 ]
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -227,8 +238,10 @@ function BackgroundColorInput({
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   slide,
   element,
+  metadata,
   onElementChange,
   onSlideChange,
+  onMetadataChange,
   onDeleteElement,
 }) => {
   const handleBackgroundChange = useCallback(
@@ -302,8 +315,33 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   return (
     <div className="slides-panel-body">
-      <h3>Slide</h3>
+      <h3>Presentation</h3>
+
+      {/* Presentation-level: title and theme */}
       <Field label="Title">
+        <input
+          type="text"
+          value={metadata?.title ?? ''}
+          disabled={!metadata}
+          onChange={(e) => onMetadataChange({ title: e.target.value })}
+        />
+      </Field>
+      <Field label="Theme">
+        <select
+          value={metadata?.themeId ?? 'default'}
+          disabled={!metadata}
+          onChange={(e) => onMetadataChange({ themeId: e.target.value })}
+        >
+          {BUILT_IN_THEMES.map((theme) => (
+            <option key={theme.id} value={theme.id}>
+              {theme.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <h3>Slide</h3>
+      <Field label="Slide title">
         <input
           type="text"
           value={slide?.title ?? ''}
@@ -317,6 +355,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           disabled={!slide}
           onColorChange={handleBackgroundChange}
         />
+      </Field>
+      <Field label="Transition">
+        <select
+          value={slide?.transition ?? 'none'}
+          disabled={!slide}
+          onChange={(e) => onSlideChange({ transition: e.target.value as SlideTransition })}
+        >
+          {TRANSITIONS.map(({ value, label }) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </Field>
       <Field label="Speaker notes">
         <textarea
