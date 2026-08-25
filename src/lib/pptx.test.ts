@@ -87,10 +87,18 @@ describe('PPTX font size conversion — toInchFontSize', () => {
 })
 
 describe('PPTX module exports', () => {
+  // 30s, not the 5s default. This dynamically imports pptxgenjs, which is a
+  // heavy dependency that Vite must transform on first load. It took 5024ms on
+  // a loaded CI runner against a 5000ms limit and failed the pipeline, while
+  // passing locally in well under it — a timing flake, not a real regression.
+  //
+  // Raising the budget rather than removing the test: it is the only thing
+  // asserting that the pptx module graph resolves at all, so a missing dep or a
+  // syntax error there would otherwise reach production silently.
   it('exports an exportPptx function', async () => {
     // We dynamically import to validate the module graph resolves. A missing
     // dep (pptxgenjs) or a syntax error in pptx.ts would cause this to throw.
     const mod = await import('./pptx')
     expect(typeof mod.exportPptx).toBe('function')
-  })
+  }, 30_000)
 })
