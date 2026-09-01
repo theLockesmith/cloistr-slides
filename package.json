@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@cloistr/auth": "^0.6.0",
-    "@cloistr/collab-common": "^0.2.14",
+    "@cloistr/collab-common": "^0.2.15",
     "@cloistr/ui": "^0.40.0",
     "jspdf": "^4.2.1",
     "nostr-tools": "^2.25.1",
