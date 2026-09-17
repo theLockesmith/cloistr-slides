@@ -13,8 +13,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cloistr/auth": "^0.6.0",
-    "@cloistr/collab-common": "^0.2.15",
+    "@cloistr/auth": "^0.7.0",
+    "@cloistr/collab-common": "^0.2.16",
     "@cloistr/ui": "^0.42.0",
     "jspdf": "^4.2.1",
     "nostr-tools": "^2.25.2",
