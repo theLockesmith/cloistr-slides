@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cloistr/auth": "^1.0.1",
+    "@cloistr/auth": "^1.1.0",
     "@cloistr/collab-common": "^0.2.16",
     "@cloistr/ui": "^0.42.1",
     "jspdf": "^4.2.1",
