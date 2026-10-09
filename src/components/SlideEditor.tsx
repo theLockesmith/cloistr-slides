@@ -13,12 +13,14 @@ import { drawSlide, handleAt, hitTest, resizeRect, type HandleId } from '../lib/
 import { createImageElement, createShapeElement, createTextElement, measureImage } from '../lib/elements'
 import * as doc from '../lib/ydoc'
 import { exportPptx } from '../lib/pptx'
+import { resolveServiceAddresses } from '../lib/serviceAddresses'
 import { PropertiesPanel } from './PropertiesPanel'
 import { PresentMode } from './PresentMode'
 
-// For development, use VITE_BLOSSOM_URL env var or fall back to public server
-// Production uses files.cloistr.xyz with platform auth
-const BLOSSOM_URL = import.meta.env.VITE_BLOSSOM_URL || 'https://nostr.download'
+// Resolved through the app's one service-address home so the file host follows
+// the environment. Order is runtime, then build-time, then default, so with no
+// runtime configuration this is identical to what it was before.
+const BLOSSOM_URL = resolveServiceAddresses().blossomUrl
 
 const SHAPES: Array<{ shape: ShapeElement['shape']; label: string }> = [
   { shape: 'rectangle', label: 'Rectangle' },
