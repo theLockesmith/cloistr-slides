@@ -14,6 +14,7 @@ import { createImageElement, createShapeElement, createTextElement, measureImage
 import * as doc from '../lib/ydoc'
 import { exportPptx } from '../lib/pptx'
 import { resolveServiceAddresses } from '../lib/serviceAddresses'
+import { documentView, canSave, saveBlockedReason, saveFailure, shouldSeedFirstSlide } from '../lib/persistenceGate'
 import { PropertiesPanel } from './PropertiesPanel'
 import { PresentMode } from './PresentMode'
 
@@ -129,35 +130,29 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     { autoLoad: true, autoSaveInterval: 60000 }
   )
 
-  // Seed a first slide once loading has settled — seeding on mount would race
-  // the snapshot load and merge a stray blank slide into a real deck.
-  //
-  // BUT `loading` cannot be the only gate. useDocumentPersistence leaves it set
-  // when the initial autoLoad finds no snapshot, which is exactly the case for
-  // a brand-new user — so gating solely on it meant a first-time user got NO
-  // slide, and with no current slide every toolbar button is disabled. An empty
-  // editor you cannot add anything to.
-  //
-  // So: seed as soon as loading clears, or after a bounded wait regardless. The
-  // wait only risks a duplicate blank slide in the rare case where a real load
-  // takes longer than it, which is far better than an unusable editor.
+  // What the editor shows and whether saving is allowed, from one place.
+  // 'failed' covers a relay that never answered: before collab-common 0.7.1
+  // that looked like "no presentation yet" and the next save replaced the real
+  // deck with a blank one.
+  const view = documentView(persistenceState)
+  // Read through a ref so the Ctrl+S listener never acts on stale state.
+  const persistenceStateRef = useRef(persistenceState)
+  persistenceStateRef.current = persistenceState
+
+  // Seed a first slide only after a CONFIRMED load. collab-common 0.7.1 reports
+  // a new presentation as loaded, so the old workaround (seed when `loading`
+  // cleared, or after an 8 second backstop regardless) is gone. That backstop
+  // was itself a hazard: on a relay slower than 8 seconds, or one that never
+  // answered, it put a blank slide into a deck that had not loaded.
   useEffect(() => {
     if (seededRef.current) return
-
-    const seed = () => {
-      if (seededRef.current) return
-      seededRef.current = true
-      if (doc.slideIds(ydoc).length === 0) doc.createSlide(ydoc)
-    }
-
-    if (!persistenceState.loading) {
-      seed()
+    if (!shouldSeedFirstSlide(persistenceState, doc.slideIds(ydoc).length)) {
+      if (persistenceState.loadStatus === 'loaded') seededRef.current = true
       return
     }
-
-    const backstop = setTimeout(seed, 8000)
-    return () => clearTimeout(backstop)
-  }, [persistenceState.loading, ydoc])
+    seededRef.current = true
+    doc.createSlide(ydoc)
+  }, [persistenceState, ydoc])
 
   useEffect(() => {
     if (slides.length === 0) {
@@ -167,11 +162,14 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     if (!slides.some((slide) => slide.id === currentSlideId)) setCurrentSlideId(slides[0]!.id)
   }, [slides, currentSlideId])
 
+  // Only save failures: collab-common also copies load failures into `error`,
+  // and the load-failed view already shows those.
+  const saveError = saveFailure(persistenceState)
   useEffect(() => {
-    if (persistenceState.error) {
-      toast.error(`Could not save: ${persistenceState.error.message}`, { duration: 8000 })
+    if (saveError) {
+      toast.error(`Could not save: ${saveError.message}`, { duration: 8000 })
     }
-  }, [persistenceState.error, toast])
+  }, [saveError, toast])
 
   // Track the canvas's on-screen size so selection handles and the text overlay
   // stay a constant size regardless of zoom or viewport.
@@ -185,7 +183,9 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     })
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [])
+    // Re-run when the editor appears: the canvas is not mounted until the
+    // presentation has loaded (view === 'ready').
+  }, [view])
 
   // Fetch any image src we have not loaded yet.
   useEffect(() => {
@@ -365,6 +365,12 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   }
 
   const onSave = async () => {
+    // Every save path (status bar, File menu, Ctrl+S) comes through here.
+    const blocked = saveBlockedReason(persistenceStateRef.current)
+    if (blocked) {
+      toast.error(blocked, { duration: 6000 })
+      return
+    }
     try {
       await persistenceControls.save()
       toast.success('Presentation saved')
@@ -472,10 +478,8 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           {
             label: 'Save',
             shortcut: 'Ctrl+S',
-            onSelect: persistenceState.initialized && !persistenceState.saving ? onSave : undefined,
-            disabledReason: !persistenceState.initialized || persistenceState.saving
-              ? (persistenceState.saving ? 'Save in progress' : 'Not ready yet')
-              : undefined,
+            onSelect: canSave(persistenceState) ? onSave : undefined,
+            disabledReason: saveBlockedReason(persistenceState) ?? undefined,
           },
           { separator: true },
           {
@@ -655,8 +659,7 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
     selectedId,
     exporting,
     uploading,
-    persistenceState.initialized,
-    persistenceState.saving,
+    persistenceState,
     ydoc,
     onAddText,
     onAddShape,
@@ -786,15 +789,19 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   // then an error, then a completed save, and only then the load state — and
   // even that is suppressed once anything has saved, since by then the initial
   // load is ancient history no matter what the flag says.
+  //
+  // collab-common 0.7.1 settles loadStatus for a new presentation too, so the
+  // load state can come first again: nothing else is meaningful before it.
   const status = useMemo(() => {
+    if (view === 'loading') return 'Loading…'
+    if (view === 'failed') return 'Could not open this presentation'
     if (persistenceState.saving) return 'Saving…'
-    if (persistenceState.error) return `Save failed — ${persistenceState.error.message}`
+    if (saveError) return `Save failed — ${saveError.message}`
     if (persistenceState.lastSave) {
       return `Saved ${new Date(persistenceState.lastSave.timestamp).toLocaleTimeString()}`
     }
-    if (persistenceState.loading) return 'Loading…'
     return persistenceState.dirty ? 'Unsaved changes' : 'No changes yet'
-  }, [persistenceState])
+  }, [persistenceState, view, saveError])
 
   if (presenting && slides.length > 0) {
     return (
@@ -811,6 +818,27 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
   return (
     <AppShell serviceId="slides" menu={menuSections}>
 
+      {view !== 'ready' ? (
+        // No editor until the presentation has actually loaded: anything added
+        // to an unloaded deck merges into it, and a failed load must read as
+        // an error, never as an empty presentation that can be saved.
+        <div className="slides-load-state">
+          {view === 'failed' ? (
+            <div className="slides-load-error" role="alert">
+              <h2>This presentation could not be opened</h2>
+              <p>
+                Nothing has been changed or saved. The relay did not return the
+                presentation{persistenceState.loadError ? ` (${persistenceState.loadError.message})` : ''}.
+              </p>
+              <button type="button" onClick={() => { void persistenceControls.load().catch(() => {}) }}>
+                Retry
+              </button>
+            </div>
+          ) : (
+            <p role="status">Loading presentation…</p>
+          )}
+        </div>
+      ) : (
       <div className="slides-body">
         {/* Slide thumbnails — a sidebar on desktop, a scrolling strip on mobile */}
         <aside className="slides-rail" aria-label="Slides">
@@ -1049,14 +1077,15 @@ export const SlideEditor: React.FC<SlideEditorProps> = ({
           />
         </aside>
       </div>
+      )}
 
       <div className="slides-status">
         <span className="slides-status-doc" title={documentId}>
           {isConnected ? '🟢' : '🔴'} {peerCount + 1} online
         </span>
         <span>{status}</span>
-        <button type="button" onClick={onSave} disabled={!persistenceState.initialized || persistenceState.saving}>
-          {saveLabel}
+        <button type="button" onClick={onSave} disabled={!canSave(persistenceState)} aria-label="Save presentation">
+          {view === 'loading' ? 'Loading…' : view === 'failed' ? 'Not loaded' : saveLabel}
         </button>
       </div>
     </AppShell>
