@@ -94,6 +94,24 @@ button:focus-visible {
   flex-direction: column;
 }
 
+/* Shown instead of the editor until the presentation has loaded, or when the
+   load failed. */
+.slides-load-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+.slides-load-error {
+  max-width: 32rem;
+  padding: 1.5rem;
+  border: 1px solid var(--cloistr-border, #d0d0d0);
+  border-radius: 8px;
+  text-align: center;
+}
+.slides-load-error h2 { margin: 0 0 0.75rem; font-size: 1.15rem; }
+
 .slides-body {
   display: flex;
   flex: 1;
