@@ -41,7 +41,7 @@ body {
 
 a {
   font-weight: 500;
-  color: var(--cloistr-primary);
+  color: var(--cloistr-primary-text);
   text-decoration: inherit;
 }
 a:hover {
